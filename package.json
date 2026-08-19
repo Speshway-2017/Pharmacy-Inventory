@@ -1,0 +1,25 @@
+{
+  "name": "pharmacy-inventory-app",
+  "version": "1.0.0",
+  "description": "Pharmacy Inventory & Billing Desktop Application",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev:electron": "electron electron/main.js",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT,ELECTRON\" -c \"bgBlue.bold,bgGreen.bold,bgMagenta.bold\" \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
+    "build:shared": "npm --prefix shared run build",
+    "build:server": "npm --prefix server run build",
+    "build:client": "npm --prefix client run build",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "dist": "npm run build && electron-builder --win",
+    "postinstall": "npm --prefix shared install && npm --prefix server install && npm --prefix client install && npm --prefix electron install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^29.1.5",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  }
+}

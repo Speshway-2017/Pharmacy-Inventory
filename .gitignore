@@ -1,0 +1,25 @@
+# Node & Dependencies
+node_modules/
+dist/
+build/
+out/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Local Data Storage (runtime data)
+local-data/*.json
+!local-data/.gitkeep
+
+# Electron builder artifacts
+release/
+*.exe
+*.AppImage
+*.dmg
+
+# OS generated files
+.DS_Store
+Thumbs.db

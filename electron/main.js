@@ -1,0 +1,136 @@
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const dns = require('dns');
+
+let mainWindow = null;
+
+const DATA_DIR = path.resolve(__dirname, '../local-data');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1366,
+    height: 768,
+    minWidth: 1200,
+    minHeight: 700,
+    title: 'Pharmacy Inventory & POS Billing Desktop',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  const isDev = !app.isPackaged;
+  const startUrl = isDev
+    ? 'http://localhost:5173'
+    : `file://${path.join(__dirname, '../client/dist/index.html')}`;
+
+  mainWindow.loadURL(startUrl);
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+app.whenReady().then(() => {
+  ensureDataDir();
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+// IPC Handler: Print Invoice
+ipcMain.handle('print-invoice', async (event, htmlContent) => {
+  let workerWindow = new BrowserWindow({
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+
+  const htmlDataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+  await workerWindow.loadURL(htmlDataUrl);
+
+  return new Promise((resolve) => {
+    workerWindow.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
+      workerWindow.close();
+      workerWindow = null;
+      if (success) {
+        resolve({ success: true });
+      } else {
+        console.warn('Print canceled or failed:', failureReason);
+        resolve({ success: false, reason: failureReason || 'Printer dialog closed' });
+      }
+    });
+  });
+});
+
+// IPC Handler: Get Printers
+ipcMain.handle('get-printers', async () => {
+  if (!mainWindow) return [];
+  try {
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    return printers;
+  } catch (err) {
+    console.error('Error fetching system printers:', err);
+    return [];
+  }
+});
+
+// IPC Handler: Connectivity Check
+ipcMain.handle('check-internet', async () => {
+  return new Promise((resolve) => {
+    dns.lookup('google.com', (err) => {
+      resolve(!err);
+    });
+  });
+});
+
+// IPC Handlers: Controlled & Sanitized Local JSON Operations
+const ALLOWED_JSON_FILES = new Set(['medicines.json', 'bills.json', 'settings.json', 'sync-queue.json', 'users.json']);
+
+ipcMain.handle('read-local-json', async (event, filename) => {
+  if (typeof filename !== 'string' || !ALLOWED_JSON_FILES.has(path.basename(filename))) {
+    console.warn(`⚠️ Rejected unauthorized IPC read attempt for filename: ${filename}`);
+    return null;
+  }
+  ensureDataDir();
+  const filePath = path.join(DATA_DIR, path.basename(filename));
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const data = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error(`Local JSON read error for ${filename}:`, err);
+    return null;
+  }
+});
+
+ipcMain.handle('write-local-json', async (event, filename, data) => {
+  if (typeof filename !== 'string' || !ALLOWED_JSON_FILES.has(path.basename(filename))) {
+    console.warn(`⚠️ Rejected unauthorized IPC write attempt for filename: ${filename}`);
+    return false;
+  }
+  ensureDataDir();
+  const filePath = path.join(DATA_DIR, path.basename(filename));
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error(`Local JSON write error for ${filename}:`, err);
+    return false;
+  }
+});
