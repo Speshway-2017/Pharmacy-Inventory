@@ -1,16 +1,32 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
+import dns from 'dns';
 
-dotenv.config();
+// Always load from the SINGLE root .env file
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 let isConnected = false;
 
 export const connectDB = async (): Promise<boolean> => {
-  const uri = process.env.MONGODB_URI;
-  if (!uri || uri.includes('YOUR_MONGODB_URI') || uri.includes('cluster.mongodb.net')) {
-    console.log('ℹ️ MongoDB URI not configured or using template placeholder. Running in Local Storage Mode.');
+  let uri = process.env.MONGODB_URI;
+
+  if (!uri || uri.includes('YOUR_MONGODB_URI') || uri.includes('user:password')) {
+    console.log('ℹ️ MongoDB URI not configured or using default placeholder. Running in Local Storage Mode.');
     isConnected = false;
     return false;
+  }
+
+  // Auto clean angle brackets around password if present
+  if (uri.includes('<') && uri.includes('>')) {
+    uri = uri.replace(/<([^>]+)>/g, '$1');
+  }
+
+  // Set Google & Cloudflare Public DNS servers to fix Windows SRV DNS query lookup refusals
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (dnsErr: any) {
+    // Fallback silently if custom DNS setting is unsupported
   }
 
   try {

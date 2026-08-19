@@ -84,10 +84,10 @@ export const Inventory: React.FC = () => {
       {/* Header Tools */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <h2 className="page-title">
             Medicine Inventory Directory
           </h2>
-          <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Total {medicines.length} medicines listed
           </div>
         </div>

@@ -44,26 +44,26 @@ export const Login: React.FC = () => {
         justifyContent: 'center',
         height: '100vh',
         width: '100vw',
-        background: 'linear-gradient(135deg, #0F766E 0%, #115E59 100%)',
+        background: 'linear-gradient(135deg, #1F2430 0%, #2563EB 100%)',
         fontFamily: 'Inter, sans-serif'
       }}
     >
       <div
         style={{
           background: '#FFFFFF',
-          borderRadius: '16px',
+          borderRadius: '20px',
           padding: '40px',
           width: '100%',
           maxWidth: '440px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)'
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div
             style={{
-              width: '56px',
-              height: '56px',
-              background: '#CCFBF1',
+              width: '60px',
+              height: '60px',
+              background: '#DBEAFE',
               borderRadius: '16px',
               display: 'inline-flex',
               alignItems: 'center',
@@ -71,7 +71,7 @@ export const Login: React.FC = () => {
               marginBottom: '12px'
             }}
           >
-            <Pill size={32} color="#0F766E" />
+            <Pill size={32} color="#2563EB" />
           </div>
           <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px' }}>
             Pharmacy Admin Login
