@@ -3,10 +3,18 @@ import { OfflineEngine } from './offlineEngine';
 import { Medicine, Bill, PharmacySettings, SyncTransaction } from '../../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+    return `http://${window.location.hostname}:5000/api`;
+  }
+  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+};
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: getApiBaseUrl(),
   timeout: 5000,
   headers: {
     'Content-Type': 'application/json'
