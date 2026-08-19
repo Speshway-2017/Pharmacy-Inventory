@@ -9,7 +9,11 @@ import {
   ShoppingCart,
   PlusCircle,
   TrendingUp,
-  Receipt
+  Receipt,
+  BarChart3,
+  Settings,
+  Pill,
+  ArrowRight
 } from 'lucide-react';
 import { Bill } from '../../../shared/types';
 import { ActiveTab } from '../components/Sidebar';
@@ -59,15 +63,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
     fetchDashboardData();
   }, []);
 
+  const quickTools = [
+    { label: 'POS Counter', icon: ShoppingCart, bg: 'var(--pastel-blue-bg)', color: 'var(--pastel-blue-icon)', tab: 'billing' },
+    { label: 'Inventory', icon: Package, bg: 'var(--pastel-green-bg)', color: 'var(--pastel-green-icon)', tab: 'inventory' },
+    { label: 'Bill History', icon: Receipt, bg: 'var(--pastel-pink-bg)', color: 'var(--pastel-pink-icon)', tab: 'history' },
+    { label: 'Reports', icon: BarChart3, bg: 'var(--pastel-purple-bg)', color: 'var(--pastel-purple-icon)', tab: 'reports' },
+    { label: 'Expiry Alert', icon: AlertTriangle, bg: 'var(--pastel-amber-bg)', color: 'var(--pastel-amber-icon)', tab: 'expiry' },
+    { label: 'Settings', icon: Settings, bg: 'var(--pastel-cyan-bg)', color: 'var(--pastel-cyan-icon)', tab: 'settings' },
+  ];
+
   return (
     <div>
-      {/* Top Quick Actions Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      {/* Top Welcome Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px' }}>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <h2 className="page-title">
             Pharmacy Counter Overview
           </h2>
-          <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Live status of daily billing, inventory & alerts
           </div>
         </div>
@@ -80,24 +93,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
 
           <button className="btn btn-secondary" onClick={() => setActiveTab('inventory')}>
             <PlusCircle size={16} />
-            <span>Manage Inventory</span>
+            <span>Add New Medicine</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
+      {/* Common Tools Panel (Matching UI Reference Design) */}
+      <div className="common-tools-panel">
+        <h3 className="section-title" style={{ fontSize: '15px', marginBottom: '16px' }}>
+          Common Tools
+        </h3>
+        <div className="tools-grid">
+          {quickTools.map((tool, idx) => {
+            const Icon = tool.icon;
+            return (
+              <div
+                key={idx}
+                className="tool-item"
+                onClick={() => setActiveTab(tool.tab as ActiveTab)}
+              >
+                <div className="tool-icon-box" style={{ backgroundColor: tool.bg }}>
+                  <Icon size={22} color={tool.color} />
+                </div>
+                <span className="tool-label">{tool.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Transaction Analysis / KPI Cards Grid */}
+      <div style={{ marginBottom: '14px' }}>
+        <h3 className="section-title" style={{ fontSize: '15px', marginBottom: '16px' }}>
+          Transaction & Inventory Analysis
+        </h3>
+      </div>
+
       <div className="kpi-grid">
         {/* Today's Sales */}
         <div className="kpi-card">
           <div className="kpi-title">
             <span>Today's Sales</span>
-            <IndianRupee size={18} color="#0F766E" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--primary-blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <IndianRupee size={16} color="var(--primary-blue)" />
+            </div>
           </div>
-          <div className="kpi-value" style={{ color: '#0F766E' }}>
+          <div className="kpi-value" style={{ color: 'var(--primary-blue)' }}>
             ₹{summary.todaysSales.toFixed(2)}
           </div>
-          <div className="kpi-subtitle text-success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <TrendingUp size={12} />
+          <div className="kpi-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--status-success)', fontWeight: 600 }}>
+            <TrendingUp size={13} />
             <span>{summary.todaysBillCount} bills completed today</span>
           </div>
         </div>
@@ -106,7 +151,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
         <div className="kpi-card">
           <div className="kpi-title">
             <span>Total Medicines</span>
-            <Package size={18} color="#64748B" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--pastel-green-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Package size={16} color="var(--pastel-green-icon)" />
+            </div>
           </div>
           <div className="kpi-value">{summary.totalMedicines}</div>
           <div className="kpi-subtitle" style={{ color: 'var(--text-secondary)' }}>
@@ -118,7 +165,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
         <div className="kpi-card">
           <div className="kpi-title">
             <span>Current Stock</span>
-            <Boxes size={18} color="#64748B" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--pastel-cyan-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Boxes size={16} color="var(--pastel-cyan-icon)" />
+            </div>
           </div>
           <div className="kpi-value">{summary.currentStockCount}</div>
           <div className="kpi-subtitle" style={{ color: 'var(--text-secondary)' }}>
@@ -134,10 +183,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
         >
           <div className="kpi-title">
             <span>Low Stock Items</span>
-            <AlertTriangle size={18} color="#F59E0B" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--pastel-amber-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={16} color="var(--pastel-amber-icon)" />
+            </div>
           </div>
-          <div className="kpi-value text-warning">{summary.lowStockCount}</div>
-          <div className="kpi-subtitle text-warning">
+          <div className="kpi-value" style={{ color: 'var(--status-warning)' }}>{summary.lowStockCount}</div>
+          <div className="kpi-subtitle" style={{ color: 'var(--status-warning)', fontWeight: 600 }}>
             Requires immediate reorder
           </div>
         </div>
@@ -150,12 +201,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
         >
           <div className="kpi-title">
             <span>Expiring / Expired</span>
-            <Clock size={18} color="#DC2626" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Clock size={16} color="var(--status-error)" />
+            </div>
           </div>
-          <div className="kpi-value text-error">
+          <div className="kpi-value" style={{ color: 'var(--status-error)' }}>
             {summary.expiringCount + summary.expiredCount}
           </div>
-          <div className="kpi-subtitle text-error">
+          <div className="kpi-subtitle" style={{ color: 'var(--status-error)', fontWeight: 600 }}>
             {summary.expiredCount > 0 ? `${summary.expiredCount} expired!` : 'Approaching expiry'}
           </div>
         </div>
@@ -165,17 +218,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       <div className="table-container">
         <div className="table-header-tools">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Receipt size={18} color="var(--primary-teal)" />
-            <h3 style={{ fontSize: '15px', fontWeight: 700 }}>Recent Sales Invoices</h3>
+            <h3 className="section-title" style={{ fontSize: '15px', margin: 0 }}>Recent Sales Invoices</h3>
           </div>
 
           <button className="btn btn-secondary btn-sm" onClick={() => setActiveTab('history')}>
-            View All Bills History
+            <span>View All Bills</span>
+            <ArrowRight size={13} />
           </button>
         </div>
 
         {summary.recentBills.length === 0 ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <div style={{ padding: '36px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             No sales completed yet today.
           </div>
         ) : (
@@ -194,16 +247,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
             <tbody>
               {summary.recentBills.map((bill) => (
                 <tr key={bill.id}>
-                  <td style={{ fontWeight: 600 }}>{bill.invoiceNumber}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--primary-blue)' }}>{bill.invoiceNumber}</td>
                   <td>{bill.time}</td>
                   <td>{bill.items.length} items</td>
                   <td>
-                    <span className="badge" style={{ background: '#F1F5F9', color: '#0F172A' }}>
+                    <span className="badge" style={{ background: '#F1F5F9', color: '#1E293B' }}>
                       {bill.paymentMethod}
                     </span>
                   </td>
                   <td>{bill.createdByName}</td>
-                  <td style={{ fontWeight: 700, color: '#0F766E' }}>₹{bill.totalAmount.toFixed(2)}</td>
+                  <td style={{ fontWeight: 800, color: 'var(--primary-blue)' }}>₹{bill.totalAmount.toFixed(2)}</td>
                   <td>
                     {bill.isOfflineCreated && bill.syncStatus === 'PENDING' ? (
                       <span className="badge badge-low-stock">Offline Pending</span>

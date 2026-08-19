@@ -7,7 +7,8 @@ import {
   BarChart3,
   AlertTriangle,
   Settings,
-  Pill
+  Pill,
+  ChevronRight
 } from 'lucide-react';
 
 export type ActiveTab = 'dashboard' | 'inventory' | 'billing' | 'history' | 'reports' | 'expiry' | 'settings';
@@ -34,7 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         <div className="sidebar-logo-icon">
           <Pill size={20} color="#FFFFFF" />
         </div>
-        <div className="sidebar-title">MedPlus POS</div>
+        <div className="sidebar-title">XingLin Pharmacy</div>
       </div>
 
       <nav className="sidebar-nav">
@@ -47,16 +48,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setActiveTab(item.id as ActiveTab)}
             >
-              <Icon size={18} color={isActive ? '#0F766E' : '#E2E8F0'} />
-              <span>{item.label}</span>
+              <div className="nav-item-left">
+                <Icon size={18} color={isActive ? '#FFFFFF' : '#94A3B8'} />
+                <span>{item.label}</span>
+              </div>
+              <ChevronRight size={14} color={isActive ? '#FFFFFF' : '#64748B'} className="nav-chevron" />
             </div>
           );
         })}
       </nav>
 
       <div className="sidebar-footer">
-        <div style={{ fontWeight: 600 }}>Pharmacy App v1.0</div>
-        <div style={{ opacity: 0.8, fontSize: '11px', marginTop: '2px' }}>Offline-First Desktop</div>
+        <div style={{ fontWeight: 600, color: '#FFFFFF' }}>Pharmacy App v1.0</div>
+        <div style={{ opacity: 0.7, fontSize: '11px', marginTop: '2px' }}>Offline-First Desktop</div>
       </div>
     </aside>
   );

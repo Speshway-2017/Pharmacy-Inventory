@@ -264,7 +264,7 @@ export const BillingPOS: React.FC = () => {
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0F766E' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary-blue)' }}>
                       ₹{med.sellingPrice.toFixed(2)}
                     </div>
                     <div style={{ fontSize: '12px', fontWeight: 600, color: isLow ? '#DC2626' : '#16A34A' }}>
@@ -283,7 +283,7 @@ export const BillingPOS: React.FC = () => {
         {/* Cart Header */}
         <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShoppingCart size={20} color="var(--primary-teal)" />
+            <ShoppingCart size={20} color="var(--primary-blue)" />
             <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Current Bill</h3>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{cart.length} items</span>
@@ -379,7 +379,7 @@ export const BillingPOS: React.FC = () => {
           {/* NET TOTAL */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderTop: '1px dashed #CBD5E1', paddingTop: '10px' }}>
             <span style={{ fontSize: '16px', fontWeight: 800 }}>TOTAL AMOUNT</span>
-            <span style={{ fontSize: '24px', fontWeight: 800, color: '#0F766E' }}>
+            <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary-blue)' }}>
               ₹{netTotal.toFixed(2)}
             </span>
           </div>
@@ -423,7 +423,7 @@ export const BillingPOS: React.FC = () => {
           {/* Complete Bill Primary Button */}
           <button
             className="btn btn-primary btn-lg"
-            style={{ width: '100%', background: '#0F766E', height: '48px' }}
+            style={{ width: '100%', height: '48px' }}
             onClick={handleCompleteBill}
             disabled={loading || cart.length === 0}
           >

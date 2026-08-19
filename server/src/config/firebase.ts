@@ -1,7 +1,9 @@
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Always load from the SINGLE root .env file
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 let messagingService: admin.messaging.Messaging | null = null;
 
