@@ -4,8 +4,8 @@ import { Pill, Lock, Mail, ShieldAlert } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
-  const [email, setEmail] = useState('admin@pharmacy.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,16 +24,6 @@ export const Login: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDemoAdmin = () => {
-    setEmail('admin@pharmacy.com');
-    setPassword('admin123');
-  };
-
-  const fillDemoStaff = () => {
-    setEmail('staff@pharmacy.com');
-    setPassword('staff123');
   };
 
   return (

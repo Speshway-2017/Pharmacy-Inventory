@@ -7,11 +7,20 @@ import {
   BarChart3,
   AlertTriangle,
   Settings,
-  Pill,
-  ChevronRight
+  Pill
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'inventory' | 'billing' | 'history' | 'reports' | 'expiry' | 'settings';
+export type ActiveTab =
+  | 'dashboard'
+  | 'inventory'
+  | 'billing'
+  | 'history'
+  | 'reports'
+  | 'stock-valuation'
+  | 'expiry-risk'
+  | 'expiry'
+  | 'settings'
+  | 'add-medicine';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -41,7 +50,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       <nav className="sidebar-nav">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
+          const isActive =
+            activeTab === item.id ||
+            (item.id === 'inventory' && activeTab === 'add-medicine') ||
+            (item.id === 'reports' && (activeTab === 'stock-valuation' || activeTab === 'expiry-risk'));
           return (
             <div
               key={item.id}
@@ -52,7 +64,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
                 <Icon size={18} color={isActive ? '#FFFFFF' : '#94A3B8'} />
                 <span>{item.label}</span>
               </div>
-              <ChevronRight size={14} color={isActive ? '#FFFFFF' : '#64748B'} className="nav-chevron" />
             </div>
           );
         })}

@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Medicine, MedicineStatus } from '../../../shared/types';
+import { Medicine, MedicineStatus, Category } from '../../../shared/types';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { MedicineFormModal } from '../components/MedicineFormModal';
 import { StockAdjustModal } from '../components/StockAdjustModal';
 import {
   Search,
@@ -11,13 +10,17 @@ import {
   Sliders,
   Trash2,
   Package,
-  Filter,
   RefreshCw
 } from 'lucide-react';
 
-export const Inventory: React.FC = () => {
+interface InventoryProps {
+  onOpenAddEditPage?: (medToEdit?: Medicine | null) => void;
+}
+
+export const Inventory: React.FC<InventoryProps> = ({ onOpenAddEditPage }) => {
   const { isAdmin } = useAuth();
   const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Search & Filters
@@ -25,9 +28,7 @@ export const Inventory: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
-  // Modals
-  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
-  const [selectedMedicineForEdit, setSelectedMedicineForEdit] = useState<Medicine | null>(null);
+  // Stock Adjustment Modal
   const [selectedMedicineForStock, setSelectedMedicineForStock] = useState<Medicine | null>(null);
 
   const fetchMedicines = async () => {
@@ -48,8 +49,20 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const res = await apiService.getCategories();
+      if (res.success && res.categories) {
+        setCategories(res.categories);
+      }
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+    }
+  };
+
   useEffect(() => {
     fetchMedicines();
+    fetchCategories();
   }, [searchTerm, selectedCategory, selectedStatus]);
 
   const handleDeactivate = async (id: string, name: string) => {
@@ -97,7 +110,12 @@ export const Inventory: React.FC = () => {
             <RefreshCw size={14} />
             <span>Refresh</span>
           </button>
-          <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              if (onOpenAddEditPage) onOpenAddEditPage(null);
+            }}
+          >
             <Plus size={16} />
             <span>Add New Medicine</span>
           </button>
@@ -121,18 +139,16 @@ export const Inventory: React.FC = () => {
           </div>
 
           {/* Category Filter */}
-          <div style={{ width: '180px' }}>
+          <div style={{ width: '200px' }}>
             <select
               className="form-control"
               value={selectedCategory}
               onChange={e => setSelectedCategory(e.target.value)}
             >
               <option value="">All Categories</option>
-              <option value="Tablet / Capsule">Tablet / Capsule</option>
-              <option value="Syrup / Liquid">Syrup / Liquid</option>
-              <option value="Antibiotic">Antibiotic</option>
-              <option value="Analgesic">Analgesic</option>
-              <option value="Supplements">Supplements</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>{cat.name}</option>
+              ))}
             </select>
           </div>
 
@@ -206,7 +222,9 @@ export const Inventory: React.FC = () => {
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => setSelectedMedicineForEdit(med)}
+                        onClick={() => {
+                          if (onOpenAddEditPage) onOpenAddEditPage(med);
+                        }}
                         title="Edit Details"
                       >
                         <Edit2 size={14} />
@@ -230,22 +248,7 @@ export const Inventory: React.FC = () => {
         )}
       </div>
 
-      {/* Modals */}
-      {isAddModalOpen && (
-        <MedicineFormModal
-          onClose={() => setIsAddModalOpen(false)}
-          onSuccess={fetchMedicines}
-        />
-      )}
-
-      {selectedMedicineForEdit && (
-        <MedicineFormModal
-          medicine={selectedMedicineForEdit}
-          onClose={() => setSelectedMedicineForEdit(null)}
-          onSuccess={fetchMedicines}
-        />
-      )}
-
+      {/* Stock Adjustment Modal */}
       {selectedMedicineForStock && (
         <StockAdjustModal
           medicine={selectedMedicineForStock}

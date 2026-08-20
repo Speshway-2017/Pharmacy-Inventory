@@ -56,13 +56,13 @@ export const LocalStore = {
   saveUsers: (users: any[]) => writeJsonFile('users.json', users),
 
   getSettings: (): any => readJsonFile<any>('settings.json', {
-    pharmacyName: "MedPlus Health Pharmacy",
-    address: "123 Healthcare Boulevard, Station Road, Tech City",
-    phone: "+91 98765 43210",
-    email: "contact@medplushealth.com",
-    gstin: "36AAACM1234F1Z5",
+    pharmacyName: "Pharmacy Store",
+    address: "",
+    phone: "",
+    email: "",
+    gstin: "",
     invoicePrefix: "INV",
-    invoiceFooter: "Thank you for choosing MedPlus Health. Wishing you good health!",
+    invoiceFooter: "Thank you for your business!",
     printerType: "THERMAL_80MM",
     printerName: "Default Printer",
     autoPrintInvoice: true,
@@ -73,6 +73,18 @@ export const LocalStore = {
 
   getSyncQueue: (): any[] => readJsonFile<any[]>('sync-queue.json', []),
   saveSyncQueue: (queue: any[]) => writeJsonFile('sync-queue.json', queue),
+
+  getCategories: (): any[] => readJsonFile<any[]>('categories.json', [
+    { id: 'cat-1', name: 'Tablet / Capsule' },
+    { id: 'cat-2', name: 'Syrup / Liquid' },
+    { id: 'cat-3', name: 'Injection' },
+    { id: 'cat-4', name: 'Ointment / Cream' },
+    { id: 'cat-5', name: 'Antibiotic' },
+    { id: 'cat-6', name: 'Analgesic' },
+    { id: 'cat-7', name: 'Supplements' },
+    { id: 'cat-8', name: 'General' }
+  ]),
+  saveCategories: (categories: any[]) => writeJsonFile('categories.json', categories),
 
   addSyncTransaction: (transaction: any) => {
     const queue = readJsonFile<any[]>('sync-queue.json', []);

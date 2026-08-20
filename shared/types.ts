@@ -126,6 +126,13 @@ export interface DashboardSummary {
   pendingSyncCount: number;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+}
+
 export interface NotificationItem {
   id: string;
   type: 'LOW_STOCK' | 'EXPIRY' | 'EXPIRED' | 'SYNC';

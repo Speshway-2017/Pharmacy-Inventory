@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bill, PharmacySettings } from '../../../shared/types';
 import { apiService } from '../services/api';
-import { Printer, X, Check } from 'lucide-react';
+import { Printer, X, Receipt, Check } from 'lucide-react';
 
 interface PrintInvoiceModalProps {
   bill: Bill;
@@ -56,105 +56,181 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ bill, onCl
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '650px' }}>
+      <div className="modal-content" style={{ maxWidth: '680px' }}>
+        {/* Modal Header */}
         <div className="modal-header">
-          <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Invoice & Print Preview</h3>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Receipt size={18} color="var(--primary-teal)" />
+            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Sales Receipt & Print Confirmation</h3>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ padding: '4px 8px' }}>
             <X size={16} />
           </button>
         </div>
 
-        <div className="modal-body" style={{ background: '#F8FAFC', padding: '16px' }}>
+        {/* Modal Body */}
+        <div className="modal-body" style={{ background: '#F8FAFC', padding: '20px' }}>
           <div
             id="printable-invoice"
             style={{
               background: '#FFFFFF',
               border: '1px solid #E2E8F0',
-              borderRadius: '8px',
+              borderRadius: '12px',
               padding: '24px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
               fontFamily: 'Inter, sans-serif'
             }}
           >
             {/* Pharmacy Header */}
-            <div style={{ textAlign: 'center', borderBottom: '2px solid #0F766E', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#0F766E', margin: 0 }}>
-                {settings?.pharmacyName || 'MedPlus Health Pharmacy'}
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #0F766E', paddingBottom: '14px', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#0F766E', margin: 0, letterSpacing: '-0.3px' }}>
+                {settings?.pharmacyName || 'Pharmacy Store'}
               </h2>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                {settings?.address || '123 Healthcare Boulevard, Tech City'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748B' }}>
-                Phone: {settings?.phone || '+91 98765 43210'} | GSTIN: {settings?.gstin || '36AAACM1234F1Z5'}
-              </div>
+              {settings?.address && (
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                  {settings.address}
+                </div>
+              )}
+              {(settings?.phone || settings?.gstin) && (
+                <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                  {settings.phone ? `Phone: ${settings.phone}` : ''} {settings.phone && settings.gstin ? ' | ' : ''} {settings.gstin ? `GSTIN: ${settings.gstin}` : ''}
+                </div>
+              )}
             </div>
 
-            {/* Bill Details */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', fontSize: '12px', background: '#F1F5F9', padding: '10px 14px', borderRadius: '6px' }}>
+            {/* Bill Details Box */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px',
+                marginBottom: '16px',
+                fontSize: '12px',
+                background: '#F1F5F9',
+                border: '1px solid #E2E8F0',
+                padding: '12px 16px',
+                borderRadius: '8px'
+              }}
+            >
               <div>
-                <div><strong>Invoice No:</strong> {bill.invoiceNumber}</div>
-                <div><strong>Date & Time:</strong> {bill.date} {bill.time}</div>
+                <div style={{ marginBottom: '3px' }}>
+                  <span style={{ color: '#64748B' }}>Invoice No: </span>
+                  <strong style={{ color: 'var(--primary-blue)', fontFamily: 'monospace' }}>{bill.invoiceNumber}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#64748B' }}>Date & Time: </span>
+                  <strong>{bill.date} {bill.time}</strong>
+                </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div><strong>Payment:</strong> {bill.paymentMethod}</div>
-                <div><strong>Billed By:</strong> {bill.createdByName}</div>
+                <div style={{ marginBottom: '3px' }}>
+                  <span style={{ color: '#64748B' }}>Payment Method: </span>
+                  <strong style={{ background: '#E2E8F0', padding: '2px 6px', borderRadius: '4px' }}>{bill.paymentMethod}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#64748B' }}>Cashier: </span>
+                  <strong>{bill.createdByName}</strong>
+                </div>
               </div>
             </div>
 
             {/* Items Table */}
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '12px' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textTransform: 'uppercase', fontSize: '11px', color: '#64748B' }}>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Item</th>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Batch</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>Qty</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Price</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
+                <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', textTransform: 'uppercase', fontSize: '11px', color: '#64748B' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Item Description</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Batch</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center' }}>Qty</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Unit Price</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Total (₹)</th>
                 </tr>
               </thead>
               <tbody>
                 {bill.items.map((item, index) => (
                   <tr key={index} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ padding: '8px' }}>
-                      <div style={{ fontWeight: 600 }}>{item.name}</div>
-                      <div style={{ fontSize: '10px', color: '#64748B' }}>{item.genericName}</div>
+                    <td style={{ padding: '8px 10px' }}>
+                      <div style={{ fontWeight: 600, color: '#0F172A' }}>{item.name}</div>
+                      {item.genericName && (
+                        <div style={{ fontSize: '10px', color: '#64748B' }}>{item.genericName}</div>
+                      )}
                     </td>
-                    <td style={{ padding: '8px' }}>{item.batchNumber}</td>
-                    <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>{item.quantity}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>₹{item.unitPrice.toFixed(2)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: 600 }}>₹{item.totalPrice.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{item.batchNumber}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>{item.quantity}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{item.unitPrice.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#0F766E' }}>
+                      ₹{item.totalPrice.toFixed(2)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
             {/* Totals Summary */}
-            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', fontSize: '13px' }}>
-              <div>Subtotal: ₹{bill.subtotal.toFixed(2)}</div>
+            <div
+              style={{
+                borderTop: '2px solid #E2E8F0',
+                paddingTop: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: '4px',
+                fontSize: '13px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', color: '#64748B' }}>
+                <span>Subtotal:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>₹{bill.subtotal.toFixed(2)}</span>
+              </div>
+
               {bill.discountAmount > 0 && (
-                <div style={{ color: '#16A34A' }}>
-                  Discount: -₹{bill.discountAmount.toFixed(2)} ({bill.discountPercentage}%)
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', color: '#16A34A' }}>
+                  <span>Discount ({bill.discountPercentage}%):</span>
+                  <span style={{ fontWeight: 600 }}>-₹{bill.discountAmount.toFixed(2)}</span>
                 </div>
               )}
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0F766E', marginTop: '6px' }}>
-                TOTAL AMOUNT: ₹{bill.totalAmount.toFixed(2)}
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '220px',
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  color: '#0F766E',
+                  marginTop: '6px',
+                  borderTop: '1px dashed #CBD5E1',
+                  paddingTop: '6px'
+                }}
+              >
+                <span>TOTAL:</span>
+                <span>₹{bill.totalAmount.toFixed(2)}</span>
               </div>
             </div>
 
-            {/* Footer */}
-            <div style={{ textAlign: 'center', marginTop: '24px', paddingTop: '12px', borderTop: '1px dashed #E2E8F0', fontSize: '11px', color: '#64748B' }}>
-              {settings?.invoiceFooter || 'Thank you for choosing MedPlus Health. Wishing you good health!'}
+            {/* Footer Note */}
+            <div
+              style={{
+                textAlign: 'center',
+                marginTop: '20px',
+                paddingTop: '12px',
+                borderTop: '1px dashed #E2E8F0',
+                fontSize: '11px',
+                color: '#64748B'
+              }}
+            >
+              {settings?.invoiceFooter || 'Thank you for your business!'}
             </div>
           </div>
         </div>
 
+        {/* Modal Footer */}
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>
-            Close
+            Close Window
           </button>
-          <button className="btn btn-primary" onClick={handlePrint}>
-            <Printer size={16} />
-            <span>Print Invoice</span>
+          <button className="btn btn-primary btn-lg" onClick={handlePrint}>
+            <Printer size={18} />
+            <span>Print Official Invoice</span>
           </button>
         </div>
       </div>

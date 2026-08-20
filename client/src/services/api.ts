@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { OfflineEngine } from './offlineEngine';
-import { Medicine, Bill, PharmacySettings, SyncTransaction } from '../../../shared/types';
+import { Medicine, Bill, PharmacySettings, SyncTransaction, Category } from '../../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const getApiBaseUrl = (): string => {
@@ -331,13 +331,13 @@ export const apiService = {
       return res.data;
     } catch (err) {
       const settings = await OfflineEngine.readJson<PharmacySettings>('settings.json', 'pharmacy_local_settings', {
-        pharmacyName: "MedPlus Health Pharmacy",
-        address: "123 Healthcare Boulevard, Station Road, Tech City",
-        phone: "+91 98765 43210",
-        email: "contact@medplushealth.com",
-        gstin: "36AAACM1234F1Z5",
+        pharmacyName: "Pharmacy Store",
+        address: "",
+        phone: "",
+        email: "",
+        gstin: "",
         invoicePrefix: "INV",
-        invoiceFooter: "Thank you for choosing MedPlus Health. Wishing you good health!",
+        invoiceFooter: "Thank you for your business!",
         printerType: "THERMAL_80MM",
         printerName: "Default Printer",
         autoPrintInvoice: true,
@@ -357,6 +357,62 @@ export const apiService = {
       const updated = { ...current.settings, ...newSettings };
       await OfflineEngine.writeJson('settings.json', 'pharmacy_local_settings', updated);
       return { success: true, message: 'Settings saved locally.', settings: updated };
+    }
+  },
+
+  // Category API
+  async getCategories() {
+    try {
+      const res = await api.get('/categories');
+      return res.data;
+    } catch (err) {
+      const defaultCategories: Category[] = [
+        { id: 'cat-1', name: 'Tablet / Capsule' },
+        { id: 'cat-2', name: 'Syrup / Liquid' },
+        { id: 'cat-3', name: 'Injection' },
+        { id: 'cat-4', name: 'Ointment / Cream' },
+        { id: 'cat-5', name: 'Antibiotic' },
+        { id: 'cat-6', name: 'Analgesic' },
+        { id: 'cat-7', name: 'Supplements' },
+        { id: 'cat-8', name: 'General' }
+      ];
+      const categories = await OfflineEngine.readJson<Category[]>('categories.json', 'pharmacy_local_categories', defaultCategories);
+      return { success: true, count: categories.length, categories };
+    }
+  },
+
+  async addCategory(name: string, description?: string) {
+    try {
+      const res = await api.post('/categories', { name, description });
+      return res.data;
+    } catch (err: any) {
+      const current = await this.getCategories();
+      const categories: Category[] = current.categories || [];
+      const trimmedName = name.trim();
+      if (categories.some(c => c.name.toLowerCase() === trimmedName.toLowerCase())) {
+        throw new Error(`Category '${trimmedName}' already exists.`);
+      }
+      const newCat: Category = {
+        id: `cat-${Date.now()}`,
+        name: trimmedName,
+        description: description || '',
+        createdAt: new Date().toISOString()
+      };
+      categories.push(newCat);
+      await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', categories);
+      return { success: true, message: 'Category added locally.', category: newCat };
+    }
+  },
+
+  async deleteCategory(id: string) {
+    try {
+      const res = await api.delete(`/categories/${id}`);
+      return res.data;
+    } catch (err) {
+      const current = await this.getCategories();
+      const categories: Category[] = (current.categories || []).filter((c: Category) => c.id !== id && c.name !== id);
+      await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', categories);
+      return { success: true, message: 'Category deleted locally.' };
     }
   }
 };
