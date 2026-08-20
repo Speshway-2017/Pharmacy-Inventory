@@ -10,6 +10,7 @@ import { protect } from '../middleware/auth';
 const router = Router();
 
 router.get('/dashboard', protect, getDashboardSummary);
+router.get('/dashboard-summary', protect, getDashboardSummary);
 router.get('/sales', protect, getSalesReport);
 router.get('/stock', protect, getStockReport);
 router.get('/expiry', protect, getExpiryReport);

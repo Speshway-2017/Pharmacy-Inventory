@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { LocalStore } from '../utils/localStorage';
-import { getIsDBConnected } from '../config/db';
+import { connectDB, getIsDBConnected } from '../config/db';
+import { initAdminAccount } from './authController';
 import SyncLog from '../models/SyncLog';
 import Bill from '../models/Bill';
 import Medicine from '../models/Medicine';
@@ -15,6 +16,12 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
     }
 
     if (!getIsDBConnected()) {
+      await connectDB();
+    }
+
+    if (getIsDBConnected()) {
+      await initAdminAccount();
+    } else {
       return res.status(503).json({
         success: false,
         message: 'Cloud Database (MongoDB) unavailable. Offline transactions saved locally and will sync when connection returns.'
@@ -26,6 +33,10 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
     const currentQueue = LocalStore.getSyncQueue();
 
     for (const tx of transactionsToSync) {
+      if (!getIsDBConnected()) {
+        console.warn('⚠️ Connection lost during sync iteration. Stopping queue processing.');
+        break;
+      }
       const { transactionId, operation, payload } = tx;
 
       try {
@@ -40,39 +51,43 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
           continue;
         }
 
+        const cleanPayload = { ...payload };
+        delete cleanPayload._id;
+
         // Process Operation
         if (operation === 'CREATE_BILL') {
           // Check if invoice number exists to prevent duplicate bill
-          const existingBill = await Bill.findOne({ invoiceNumber: payload.invoiceNumber });
+          const existingBill = await Bill.findOne({ invoiceNumber: cleanPayload.invoiceNumber });
           if (!existingBill) {
-            await Bill.create({ ...payload, syncStatus: 'SYNCED', isOfflineCreated: true });
+            await Bill.create({ ...cleanPayload, syncStatus: 'SYNCED', isOfflineCreated: true });
           }
 
           // Safely synchronize stock deduction in MongoDB without blind overwrite!
-          for (const item of payload.items) {
+          for (const item of cleanPayload.items) {
+            const deducted = item.baseUnitsDeducted || (item.quantity * (item.unitsPerPackage || 1));
             await Medicine.findOneAndUpdate(
               { id: item.medicineId },
-              { $inc: { quantity: -item.quantity } }
+              { $inc: { quantity: -deducted } }
             );
           }
         } else if (operation === 'DEDUCT_STOCK') {
           // Safe stock operation sync
           await Medicine.findOneAndUpdate(
-            { id: payload.medicineId },
-            { $inc: { quantity: -payload.quantity } }
+            { id: cleanPayload.medicineId },
+            { $inc: { quantity: -cleanPayload.quantity } }
           );
         } else if (operation === 'ADD_STOCK') {
           await Medicine.findOneAndUpdate(
-            { id: payload.medicineId },
-            { $inc: { quantity: payload.quantity } }
+            { id: cleanPayload.medicineId },
+            { $inc: { quantity: cleanPayload.quantity } }
           );
         } else if (operation === 'CREATE_MEDICINE') {
-          const existingMed = await Medicine.findOne({ id: payload.id });
+          const existingMed = await Medicine.findOne({ id: cleanPayload.id });
           if (!existingMed) {
-            await Medicine.create(payload);
+            await Medicine.create(cleanPayload);
           }
         } else if (operation === 'UPDATE_MEDICINE') {
-          await Medicine.findOneAndUpdate({ id: payload.id }, payload, { upsert: true });
+          await Medicine.findOneAndUpdate({ id: cleanPayload.id }, cleanPayload, { upsert: true });
         }
 
         // Log successful sync in MongoDB

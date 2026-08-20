@@ -46,7 +46,24 @@ function writeJsonFile<T>(filename: string, data: T): boolean {
 }
 
 export const LocalStore = {
-  getMedicines: (): any[] => readJsonFile<any[]>('medicines.json', []),
+  getMedicines: (): any[] => {
+    const medicines = readJsonFile<any[]>('medicines.json', []);
+    // Apply safe defaults for legacy medicine records
+    return medicines.map(m => ({
+      ...m,
+      code: m.code || `MED-${(m.id || '000000').slice(-6).toUpperCase()}`,
+      strength: m.strength || '',
+      dosageForm: m.dosageForm || 'Tablet',
+      packageType: m.packageType || 'Strip',
+      unitsPerPackage: m.unitsPerPackage && m.unitsPerPackage >= 1 ? m.unitsPerPackage : 1,
+      sellingMode: m.sellingMode || 'FULL_PACKAGE_ONLY',
+      looseUnitName: m.looseUnitName || 'Tablet',
+      rack: m.rack || '',
+      row: m.row || '',
+      column: m.column || '',
+      shelfBin: m.shelfBin || ''
+    }));
+  },
   saveMedicines: (medicines: any[]) => writeJsonFile('medicines.json', medicines),
 
   getBills: (): any[] => readJsonFile<any[]>('bills.json', []),
@@ -56,13 +73,13 @@ export const LocalStore = {
   saveUsers: (users: any[]) => writeJsonFile('users.json', users),
 
   getSettings: (): any => readJsonFile<any>('settings.json', {
-    pharmacyName: "MedPlus Health Pharmacy",
-    address: "123 Healthcare Boulevard, Station Road, Tech City",
-    phone: "+91 98765 43210",
-    email: "contact@medplushealth.com",
-    gstin: "36AAACM1234F1Z5",
+    pharmacyName: "Pharmacy Store",
+    address: "",
+    phone: "",
+    email: "",
+    gstin: "",
     invoicePrefix: "INV",
-    invoiceFooter: "Thank you for choosing MedPlus Health. Wishing you good health!",
+    invoiceFooter: "Thank you for your business!",
     printerType: "THERMAL_80MM",
     printerName: "Default Printer",
     autoPrintInvoice: true,
@@ -73,6 +90,21 @@ export const LocalStore = {
 
   getSyncQueue: (): any[] => readJsonFile<any[]>('sync-queue.json', []),
   saveSyncQueue: (queue: any[]) => writeJsonFile('sync-queue.json', queue),
+
+  getCategories: (): any[] => readJsonFile<any[]>('categories.json', [
+    { id: 'cat-1', name: 'Tablet / Capsule' },
+    { id: 'cat-2', name: 'Syrup / Liquid' },
+    { id: 'cat-3', name: 'Injection' },
+    { id: 'cat-4', name: 'Ointment / Cream' },
+    { id: 'cat-5', name: 'Antibiotic' },
+    { id: 'cat-6', name: 'Analgesic' },
+    { id: 'cat-7', name: 'Supplements' },
+    { id: 'cat-8', name: 'General' }
+  ]),
+  saveCategories: (categories: any[]) => writeJsonFile('categories.json', categories),
+
+  getStockMovements: (): any[] => readJsonFile<any[]>('stock-movements.json', []),
+  saveStockMovements: (movements: any[]) => writeJsonFile('stock-movements.json', movements),
 
   addSyncTransaction: (transaction: any) => {
     const queue = readJsonFile<any[]>('sync-queue.json', []);

@@ -36,6 +36,29 @@ function createWindow() {
 
   mainWindow.loadURL(startUrl);
 
+  let isQuitting = false;
+
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'warning',
+        buttons: ['Cancel', 'Yes, Exit Application'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Pharmacy System Exit',
+        message: 'Are you sure you want to close Pharmacy Inventory & POS Billing System?',
+        detail: 'Any active transactions or billing drafts may be lost.',
+        noLink: true,
+        normalizeAccessKeys: true
+      });
+      if (choice === 1) {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -100,7 +123,7 @@ ipcMain.handle('check-internet', async () => {
 });
 
 // IPC Handlers: Controlled & Sanitized Local JSON Operations
-const ALLOWED_JSON_FILES = new Set(['medicines.json', 'bills.json', 'settings.json', 'sync-queue.json', 'users.json']);
+const ALLOWED_JSON_FILES = new Set(['medicines.json', 'bills.json', 'settings.json', 'sync-queue.json', 'users.json', 'categories.json', 'session.json']);
 
 ipcMain.handle('read-local-json', async (event, filename) => {
   if (typeof filename !== 'string' || !ALLOWED_JSON_FILES.has(path.basename(filename))) {

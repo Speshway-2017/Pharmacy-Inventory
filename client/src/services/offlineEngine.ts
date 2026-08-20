@@ -9,6 +9,8 @@ declare global {
       getPrinters: () => Promise<any[]>;
       readLocalJson: (filename: string) => Promise<any>;
       writeLocalJson: (filename: string, data: any) => Promise<boolean>;
+      confirmQuit: () => void;
+      onAppCloseRequested: (callback: () => void) => void;
       onConnectivityChange: (callback: (status: boolean) => void) => void;
     };
   }

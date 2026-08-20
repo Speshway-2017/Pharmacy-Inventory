@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Medicine, MedicineStatus } from '../../../shared/types';
+import { Medicine, MedicineStatus, Category } from '../../../shared/types';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { MedicineFormModal } from '../components/MedicineFormModal';
 import { StockAdjustModal } from '../components/StockAdjustModal';
+import { AddStockModal } from '../components/AddStockModal';
 import {
   Search,
   Plus,
@@ -11,24 +11,32 @@ import {
   Sliders,
   Trash2,
   Package,
-  Filter,
-  RefreshCw
+  RefreshCw,
+  PlusCircle,
+  MapPin
 } from 'lucide-react';
 
-export const Inventory: React.FC = () => {
+interface InventoryProps {
+  onOpenAddEditPage?: (medToEdit?: Medicine | null) => void;
+}
+
+const DOSAGE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Syringe', 'Bottle', 'Vial', 'Other'];
+
+export const Inventory: React.FC<InventoryProps> = ({ onOpenAddEditPage }) => {
   const { isAdmin } = useAuth();
   const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedDosageForm, setSelectedDosageForm] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
   // Modals
-  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
-  const [selectedMedicineForEdit, setSelectedMedicineForEdit] = useState<Medicine | null>(null);
-  const [selectedMedicineForStock, setSelectedMedicineForStock] = useState<Medicine | null>(null);
+  const [selectedMedicineForAdjust, setSelectedMedicineForAdjust] = useState<Medicine | null>(null);
+  const [selectedMedicineForAddStock, setSelectedMedicineForAddStock] = useState<Medicine | null>(null);
 
   const fetchMedicines = async () => {
     setLoading(true);
@@ -36,6 +44,7 @@ export const Inventory: React.FC = () => {
       const res = await apiService.getMedicines({
         search: searchTerm,
         category: selectedCategory,
+        dosageForm: selectedDosageForm,
         status: selectedStatus
       });
       if (res.success) {
@@ -48,9 +57,21 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const res = await apiService.getCategories();
+      if (res.success && res.categories) {
+        setCategories(res.categories);
+      }
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+    }
+  };
+
   useEffect(() => {
     fetchMedicines();
-  }, [searchTerm, selectedCategory, selectedStatus]);
+    fetchCategories();
+  }, [searchTerm, selectedCategory, selectedDosageForm, selectedStatus]);
 
   const handleDeactivate = async (id: string, name: string) => {
     if (!window.confirm(`Are you sure you want to deactivate ${name}?`)) return;
@@ -79,6 +100,51 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  // Helper to format stock into Packages + Loose Units string
+  const formatStockDisplay = (med: Medicine) => {
+    const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
+    const totalBase = med.quantity || 0;
+    const pkgQty = Math.floor(totalBase / unitsPerPkg);
+    const looseQty = totalBase % unitsPerPkg;
+    const pkgName = med.packageType || 'Strip';
+    const looseName = med.looseUnitName || 'Tablet';
+
+    if (unitsPerPkg === 1) {
+      return <strong>{totalBase} {looseName}s</strong>;
+    }
+
+    if (pkgQty > 0 && looseQty > 0) {
+      return (
+        <div>
+          <strong>{pkgQty} {pkgName}s</strong>
+          <span style={{ fontSize: '11px', color: '#0F766E', marginLeft: '4px' }}>
+            + {looseQty} {looseName}s
+          </span>
+        </div>
+      );
+    } else if (pkgQty > 0) {
+      return <strong>{pkgQty} {pkgName}s</strong>;
+    } else {
+      return <strong>{looseQty} {looseName}s</strong>;
+    }
+  };
+
+  // Helper to format location
+  const formatLocation = (med: Medicine) => {
+    const locs = [];
+    if (med.rack) locs.push(`Rack ${med.rack}`);
+    if (med.row) locs.push(`R-${med.row}`);
+    if (med.column) locs.push(`C-${med.column}`);
+    if (med.shelfBin) locs.push(med.shelfBin);
+    if (!locs.length) return <span style={{ color: '#94A3B8', fontSize: '11px' }}>Unassigned</span>;
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', background: '#F1F5F9', padding: '2px 6px', borderRadius: '4px', color: '#475569' }}>
+        <MapPin size={11} color="#7C3AED" />
+        <span>{locs.join(' → ')}</span>
+      </div>
+    );
+  };
+
   return (
     <div>
       {/* Header Tools */}
@@ -97,7 +163,12 @@ export const Inventory: React.FC = () => {
             <RefreshCw size={14} />
             <span>Refresh</span>
           </button>
-          <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              if (onOpenAddEditPage) onOpenAddEditPage(null);
+            }}
+          >
             <Plus size={16} />
             <span>Add New Medicine</span>
           </button>
@@ -106,7 +177,7 @@ export const Inventory: React.FC = () => {
 
       {/* Filter Bar */}
       <div className="table-container" style={{ marginBottom: '20px' }}>
-        <div className="table-header-tools" style={{ flexWrap: 'wrap' }}>
+        <div className="table-header-tools" style={{ flexWrap: 'wrap', gap: '10px' }}>
           {/* Search Box */}
           <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
             <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '11px' }} />
@@ -114,7 +185,7 @@ export const Inventory: React.FC = () => {
               type="text"
               className="form-control"
               style={{ paddingLeft: '36px' }}
-              placeholder="Search medicine name, generic name, barcode, batch..."
+              placeholder="Search by code (MED-xxx), name, generic, strength, barcode..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
@@ -128,16 +199,28 @@ export const Inventory: React.FC = () => {
               onChange={e => setSelectedCategory(e.target.value)}
             >
               <option value="">All Categories</option>
-              <option value="Tablet / Capsule">Tablet / Capsule</option>
-              <option value="Syrup / Liquid">Syrup / Liquid</option>
-              <option value="Antibiotic">Antibiotic</option>
-              <option value="Analgesic">Analgesic</option>
-              <option value="Supplements">Supplements</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dosage Form Filter */}
+          <div style={{ width: '150px' }}>
+            <select
+              className="form-control"
+              value={selectedDosageForm}
+              onChange={e => setSelectedDosageForm(e.target.value)}
+            >
+              <option value="">All Dosage Forms</option>
+              {DOSAGE_FORMS.map((form) => (
+                <option key={form} value={form}>{form}</option>
+              ))}
             </select>
           </div>
 
           {/* Status Filter */}
-          <div style={{ width: '160px' }}>
+          <div style={{ width: '150px' }}>
             <select
               className="form-control"
               value={selectedStatus}
@@ -163,13 +246,13 @@ export const Inventory: React.FC = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Medicine Name</th>
+                <th>Code</th>
+                <th>Medicine Details</th>
                 <th>Category</th>
-                <th>Batch</th>
-                <th>Expiry Date</th>
-                <th>MRP</th>
+                <th>Batch / Expiry</th>
+                <th>Location</th>
                 <th>Selling Price</th>
-                <th>Stock Qty</th>
+                <th>Stock Units</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -177,36 +260,58 @@ export const Inventory: React.FC = () => {
             <tbody>
               {medicines.map((med) => (
                 <tr key={med.id}>
+                  <td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary-blue)', fontSize: '12px' }}>
+                    {med.code || `MED-${med.id.slice(-6).toUpperCase()}`}
+                  </td>
                   <td>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{med.name}</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {med.name} {med.strength ? `(${med.strength})` : ''}
+                    </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {med.genericName} | {med.barcode}
+                      {med.genericName} | {med.dosageForm || 'Tablet'} | Barcode: {med.barcode}
                     </div>
                   </td>
                   <td>{med.category}</td>
-                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{med.batchNumber}</td>
-                  <td>{med.expiryDate}</td>
-                  <td>₹{med.mrp.toFixed(2)}</td>
-                  <td style={{ fontWeight: 700, color: '#0F766E' }}>₹{med.sellingPrice.toFixed(2)}</td>
                   <td>
-                    <strong style={{ fontSize: '14px' }}>{med.quantity}</strong>
-                    <span style={{ fontSize: '11px', color: '#64748B', marginLeft: '4px' }}>
-                      (Min: {med.reorderLevel})
-                    </span>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '12px' }}>{med.batchNumber}</div>
+                    <div style={{ fontSize: '11px', color: '#64748B' }}>Exp: {med.expiryDate}</div>
+                  </td>
+                  <td>{formatLocation(med)}</td>
+                  <td style={{ fontWeight: 700, color: '#0F766E' }}>
+                    ₹{(Number(med.sellingPrice) || 0).toFixed(2)}
+                    <div style={{ fontSize: '10px', color: '#64748B', fontWeight: 400 }}>
+                      per {med.packageType || 'Strip'}
+                    </div>
+                  </td>
+                  <td>
+                    {formatStockDisplay(med)}
+                    <div style={{ fontSize: '10px', color: '#64748B' }}>
+                      ({med.quantity} total base units)
+                    </div>
                   </td>
                   <td>{renderStatusBadge(med.status)}</td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '6px' }}>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => setSelectedMedicineForStock(med)}
+                        onClick={() => setSelectedMedicineForAddStock(med)}
+                        title="Add Stock Shipment"
+                        style={{ color: '#0F766E' }}
+                      >
+                        <PlusCircle size={14} />
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setSelectedMedicineForAdjust(med)}
                         title="Adjust Stock"
                       >
                         <Sliders size={14} />
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => setSelectedMedicineForEdit(med)}
+                        onClick={() => {
+                          if (onOpenAddEditPage) onOpenAddEditPage(med);
+                        }}
                         title="Edit Details"
                       >
                         <Edit2 size={14} />
@@ -230,26 +335,20 @@ export const Inventory: React.FC = () => {
         )}
       </div>
 
-      {/* Modals */}
-      {isAddModalOpen && (
-        <MedicineFormModal
-          onClose={() => setIsAddModalOpen(false)}
+      {/* Add Stock Modal */}
+      {selectedMedicineForAddStock && (
+        <AddStockModal
+          medicine={selectedMedicineForAddStock}
+          onClose={() => setSelectedMedicineForAddStock(null)}
           onSuccess={fetchMedicines}
         />
       )}
 
-      {selectedMedicineForEdit && (
-        <MedicineFormModal
-          medicine={selectedMedicineForEdit}
-          onClose={() => setSelectedMedicineForEdit(null)}
-          onSuccess={fetchMedicines}
-        />
-      )}
-
-      {selectedMedicineForStock && (
+      {/* Stock Adjustment Modal */}
+      {selectedMedicineForAdjust && (
         <StockAdjustModal
-          medicine={selectedMedicineForStock}
-          onClose={() => setSelectedMedicineForStock(null)}
+          medicine={selectedMedicineForAdjust}
+          onClose={() => setSelectedMedicineForAdjust(null)}
           onSuccess={fetchMedicines}
         />
       )}

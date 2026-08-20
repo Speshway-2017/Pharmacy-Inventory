@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Bill from '../models/Bill';
 import Medicine from '../models/Medicine';
+import StockMovement from '../models/StockMovement';
 import { getIsDBConnected } from '../config/db';
 import { LocalStore } from '../utils/localStorage';
 import { AuthenticatedRequest } from '../middleware/auth';
@@ -28,7 +29,7 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
 
     // STEP 1: VALIDATE ALL CART ITEMS BEFORE MUTATING ANY STOCK
     for (const item of items) {
-      const med = localMedicines.find(m => m.id === item.medicineId || m.barcode === item.barcode);
+      const med = localMedicines.find(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
 
       if (!med) {
         return res.status(400).json({
@@ -47,27 +48,50 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
         });
       }
 
-      // Business Rule Check: Stock MUST NOT become negative!
-      if (med.quantity < item.quantity) {
+      // Business Rule Check: Package vs Loose Selling Mode validation
+      const unitType = item.unitType || 'PACKAGE';
+      const unitsPerPackage = med.unitsPerPackage && Number(med.unitsPerPackage) >= 1 ? Number(med.unitsPerPackage) : 1;
+
+      if (unitType === 'LOOSE' && med.sellingMode === 'FULL_PACKAGE_ONLY') {
         return res.status(400).json({
           success: false,
-          message: `Insufficient stock for '${med.name}'! Available: ${med.quantity}, Requested: ${item.quantity}.`
+          message: `'${med.name}' is configured for FULL PACKAGE sales only. Loose unit sales are disabled.`
+        });
+      }
+
+      // Calculate required base units
+      const requiredBaseUnits = unitType === 'PACKAGE' ? (Number(item.quantity) * unitsPerPackage) : Number(item.quantity);
+
+      // Business Rule Check: Stock MUST NOT become negative!
+      if (med.quantity < requiredBaseUnits) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for '${med.name}'! Available: ${med.quantity} base units, Requested: ${requiredBaseUnits} base units.`
         });
       }
     }
 
-    // STEP 2: DEDUCT STOCK & BUILD BILL ITEMS
+    // STEP 2: DEDUCT STOCK & BUILD BILL ITEMS & STOCK MOVEMENTS
     let subtotal = 0;
     const processedBillItems = [];
+    const localMovements = LocalStore.getStockMovements();
 
     for (const item of items) {
-      const index = localMedicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode);
+      const index = localMedicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
       const med = localMedicines[index];
 
-      med.quantity -= item.quantity;
-      subtotal += item.unitPrice * item.quantity;
+      const unitType = item.unitType || 'PACKAGE';
+      const unitsPerPackage = med.unitsPerPackage && Number(med.unitsPerPackage) >= 1 ? Number(med.unitsPerPackage) : 1;
+      const baseUnitsDeducted = unitType === 'PACKAGE' ? (Number(item.quantity) * unitsPerPackage) : Number(item.quantity);
 
-      // Update status if now low stock
+      const unitPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
+      const quantity = Math.max(1, Number(item.quantity) || 1);
+      const totalPrice = Math.round(unitPrice * quantity * 100) / 100;
+
+      med.quantity -= baseUnitsDeducted;
+      subtotal += totalPrice;
+
+      // Update status
       if (med.quantity <= med.reorderLevel) {
         med.status = med.quantity <= 0 ? 'LOW_STOCK' : 'LOW_STOCK';
       }
@@ -76,18 +100,48 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
 
       processedBillItems.push({
         medicineId: med.id,
+        code: med.code || `MED-${med.id.slice(-6).toUpperCase()}`,
         name: med.name,
-        genericName: med.genericName,
+        genericName: med.genericName || med.name,
         batchNumber: med.batchNumber,
         expiryDate: med.expiryDate,
-        unitPrice: item.unitPrice,
-        quantity: item.quantity,
-        totalPrice: item.unitPrice * item.quantity
+        unitPrice,
+        quantity,
+        unitType,
+        unitsPerPackage,
+        looseUnitName: med.looseUnitName || 'Tablet',
+        baseUnitsDeducted,
+        totalPrice
       });
+
+      // Log Stock Out Movement
+      const movementLog = {
+        id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        medicineId: med.id,
+        medicineName: med.name,
+        code: med.code,
+        type: 'STOCK_OUT',
+        baseQuantityChange: -baseUnitsDeducted,
+        batchNumber: med.batchNumber,
+        expiryDate: med.expiryDate,
+        reason: `Sales Invoice ${generateInvoiceNumber()}`,
+        performedByName: req.user?.name || 'Pharmacy Staff',
+        createdAt: new Date().toISOString()
+      };
+      localMovements.unshift(movementLog);
+
+      if (getIsDBConnected()) {
+        try {
+          await StockMovement.create(movementLog);
+        } catch (movErr) {
+          console.warn('Could not save StockMovement to DB:', movErr);
+        }
+      }
     }
 
-    // Persist updated medicine stock locally
+    // Persist updated stock & movements locally
     LocalStore.saveMedicines(localMedicines);
+    LocalStore.saveStockMovements(localMovements);
 
     // Compute total discount & net total
     let finalDiscount = Number(discountAmount);
@@ -123,20 +177,39 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
     localBills.unshift(newBill);
     LocalStore.saveBills(localBills);
 
-    // Save to MongoDB if connected
+    // Save to MongoDB if connected, else queue transaction for sync
     if (getIsDBConnected()) {
       try {
         await Bill.create(newBill);
-        // Also sync stock to MongoDB
+        // Also sync stock to MongoDB using baseUnitsDeducted
         for (const item of processedBillItems) {
           await Medicine.findOneAndUpdate(
             { id: item.medicineId },
-            { $inc: { quantity: -item.quantity } }
+            { $inc: { quantity: -item.baseUnitsDeducted } }
           );
         }
       } catch (dbErr: any) {
         console.warn('⚠️ Could not save bill to MongoDB directly. Queuing for sync:', dbErr.message);
+        newBill.syncStatus = 'PENDING';
+        LocalStore.addSyncTransaction({
+          id: `tx-${Date.now()}`,
+          transactionId: `OFFLINE-CREATE_BILL-${newBill.id}`,
+          operation: 'CREATE_BILL',
+          payload: newBill,
+          status: 'PENDING',
+          createdAt: new Date().toISOString()
+        });
       }
+    } else {
+      newBill.syncStatus = 'PENDING';
+      LocalStore.addSyncTransaction({
+        id: `tx-${Date.now()}`,
+        transactionId: `OFFLINE-CREATE_BILL-${newBill.id}`,
+        operation: 'CREATE_BILL',
+        payload: newBill,
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      });
     }
 
     sendNotification('New Sale Completed', `Invoice ${invoiceNumber} created for ₹${newBill.totalAmount}`);

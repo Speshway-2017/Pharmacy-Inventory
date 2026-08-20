@@ -14,6 +14,7 @@ import billRoutes from './routes/billRoutes';
 import reportRoutes from './routes/reportRoutes';
 import syncRoutes from './routes/syncRoutes';
 import settingsRoutes from './routes/settingsRoutes';
+import categoryRoutes from './routes/categoryRoutes';
 
 // Always load from the SINGLE root .env file
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -78,6 +79,7 @@ app.use('/api/bills', billRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/categories', categoryRoutes);
 
 // Healthcheck Endpoint
 app.get('/api/health', (req, res) => {

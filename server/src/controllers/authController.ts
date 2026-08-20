@@ -18,38 +18,31 @@ export const initAdminAccount = async () => {
   const rawPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
   try {
-    let existingAdmin: any = null;
-    if (getIsDBConnected()) {
-      existingAdmin = await User.findOne({ email: adminEmail });
-    }
+    const passwordHash = await bcrypt.hash(rawPassword, 10);
+    const adminObj = {
+      id: 'usr-admin-01',
+      name: adminName,
+      email: adminEmail,
+      passwordHash,
+      role: 'ADMIN' as const,
+      createdAt: new Date().toISOString()
+    };
 
     const localUsers = LocalStore.getUsers();
-    const localAdmin = localUsers.find((u: any) => u.email?.toLowerCase() === adminEmail);
+    const localAdminIndex = localUsers.findIndex((u: any) => u.email?.toLowerCase() === adminEmail || u.role === 'ADMIN');
 
-    if (!existingAdmin && !localAdmin) {
-      console.log('🔒 Initializing Single Admin account from environment configuration...');
-      const passwordHash = await bcrypt.hash(rawPassword, 10);
-      const newAdmin = {
-        id: 'usr-admin-01',
-        name: adminName,
-        email: adminEmail,
-        passwordHash,
-        role: 'ADMIN' as const,
-        createdAt: new Date().toISOString()
-      };
-
-      LocalStore.saveUsers([newAdmin]);
-
-      if (getIsDBConnected()) {
-        await User.create(newAdmin);
-      }
-      console.log(`✅ Single Admin account initialized for [${adminEmail}]`);
+    if (localAdminIndex === -1) {
+      localUsers.unshift(adminObj);
     } else {
-      // Retain only ADMIN users in local storage
-      const cleanUsers = localUsers.filter((u: any) => u.role === 'ADMIN');
-      if (cleanUsers.length !== localUsers.length) {
-        LocalStore.saveUsers(cleanUsers);
-      }
+      localUsers[localAdminIndex] = { ...localUsers[localAdminIndex], ...adminObj };
+    }
+    LocalStore.saveUsers(localUsers);
+
+    if (getIsDBConnected()) {
+      await User.findOneAndUpdate({ email: adminEmail }, adminObj, { upsert: true, new: true });
+      console.log(`✅ Admin account synced to MongoDB Cloud Database [${adminEmail}]`);
+    } else {
+      console.log(`ℹ️ Admin account initialized locally [${adminEmail}]. Will sync when MongoDB connects.`);
     }
   } catch (err: any) {
     console.error('⚠️ Admin startup initialization error:', err.message);

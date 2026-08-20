@@ -22,13 +22,21 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const checkConnectivityAndSyncQueue = async () => {
-    const online = await OfflineEngine.isOnline();
-    setIsOnline(online);
-    const count = await OfflineEngine.getPendingSyncCount();
-    setPendingSyncCount(count);
+    try {
+      const statusRes = await apiService.getSyncStatus();
+      const dbOnline = !!statusRes?.isOnline;
+      const count = statusRes?.pendingCount !== undefined ? statusRes.pendingCount : await OfflineEngine.getPendingSyncCount();
 
-    if (online && count > 0 && !isSyncing) {
-      triggerSyncHandler();
+      setIsOnline(dbOnline);
+      setPendingSyncCount(count);
+
+      if (dbOnline && count > 0 && !isSyncing) {
+        triggerSyncHandler();
+      }
+    } catch (err) {
+      setIsOnline(false);
+      const count = await OfflineEngine.getPendingSyncCount();
+      setPendingSyncCount(count);
     }
   };
 
@@ -37,8 +45,12 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsSyncing(true);
     try {
       await apiService.triggerSync();
-      const newCount = await OfflineEngine.getPendingSyncCount();
+      const statusRes = await apiService.getSyncStatus();
+      const newCount = statusRes?.pendingCount !== undefined ? statusRes.pendingCount : await OfflineEngine.getPendingSyncCount();
       setPendingSyncCount(newCount);
+      if (statusRes?.isOnline !== undefined) {
+        setIsOnline(statusRes.isOnline);
+      }
     } catch (err) {
       console.warn('Sync attempt failed:', err);
     } finally {
