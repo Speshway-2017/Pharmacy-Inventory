@@ -1,21 +1,11 @@
 import axios from 'axios';
+import { Medicine, Bill, PharmacySettings, DashboardSummary, Category } from '../../../shared/types';
 import { OfflineEngine } from './offlineEngine';
-import { Medicine, Bill, PharmacySettings, SyncTransaction, Category } from '../../../shared/types';
-import { v4 as uuidv4 } from 'uuid';
 
-const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
-  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
-    return `http://${window.location.hostname}:5000/api`;
-  }
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-};
+const API_BASE_URL = 'http://localhost:5000/api';
 
 const api = axios.create({
-  baseURL: getApiBaseUrl(),
-  timeout: 5000,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -68,7 +58,7 @@ export const apiService = {
   },
 
   // Medicines API
-  async getMedicines(params?: { search?: string; category?: string; status?: string }) {
+  async getMedicines(params?: { search?: string; category?: string; dosageForm?: string; status?: string; rack?: string }) {
     try {
       const res = await api.get('/medicines', { params });
       return res.data;
@@ -78,14 +68,19 @@ export const apiService = {
       if (params?.search) {
         const q = params.search.toLowerCase();
         medicines = medicines.filter(m =>
-          m.name.toLowerCase().includes(q) ||
-          m.genericName.toLowerCase().includes(q) ||
-          m.barcode.includes(q) ||
-          m.batchNumber.toLowerCase().includes(q)
+          (m.name && m.name.toLowerCase().includes(q)) ||
+          (m.genericName && m.genericName.toLowerCase().includes(q)) ||
+          (m.code && m.code.toLowerCase().includes(q)) ||
+          (m.barcode && m.barcode.toLowerCase().includes(q)) ||
+          (m.batchNumber && m.batchNumber.toLowerCase().includes(q)) ||
+          (m.strength && m.strength.toLowerCase().includes(q)) ||
+          (m.manufacturer && m.manufacturer.toLowerCase().includes(q))
         );
       }
       if (params?.category) medicines = medicines.filter(m => m.category === params.category);
+      if (params?.dosageForm) medicines = medicines.filter(m => m.dosageForm === params.dosageForm);
       if (params?.status) medicines = medicines.filter(m => m.status === params.status);
+      if (params?.rack) medicines = medicines.filter(m => m.rack === params.rack);
       return { success: true, count: medicines.length, medicines };
     }
   },
@@ -97,20 +92,32 @@ export const apiService = {
     } catch (err) {
       console.warn('⚠️ Server unavailable. Adding medicine locally and queuing sync.');
       const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
+      const num = Math.floor(100000 + Math.random() * 900000);
       const newMed: Medicine = {
         id: `med-${Date.now()}`,
+        code: medicineData.code || `MED-${num}`,
         name: medicineData.name || '',
         genericName: medicineData.genericName || medicineData.name || '',
         category: medicineData.category || 'General',
         manufacturer: medicineData.manufacturer || 'Standard Pharma',
+        strength: medicineData.strength || '',
+        dosageForm: medicineData.dosageForm || 'Tablet',
+        packageType: medicineData.packageType || 'Strip',
+        unitsPerPackage: Math.max(1, Number(medicineData.unitsPerPackage) || 1),
+        sellingMode: medicineData.sellingMode || 'FULL_PACKAGE_ONLY',
+        looseUnitName: medicineData.looseUnitName || 'Tablet',
         batchNumber: medicineData.batchNumber || `BATCH-${Date.now()}`,
         expiryDate: medicineData.expiryDate || '2027-12-31',
-        mrp: Number(medicineData.mrp) || Number(medicineData.sellingPrice),
+        mrp: Number(medicineData.mrp) || Number(medicineData.sellingPrice) || 0,
         sellingPrice: Number(medicineData.sellingPrice) || 0,
-        quantity: Number(medicineData.quantity) || 0,
+        quantity: Math.max(0, Number(medicineData.quantity) || 0),
         reorderLevel: Number(medicineData.reorderLevel) || 10,
         barcode: medicineData.barcode || `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
-        status: (Number(medicineData.quantity) || 0) <= 10 ? 'LOW_STOCK' : 'IN_STOCK',
+        rack: medicineData.rack || '',
+        row: medicineData.row || '',
+        column: medicineData.column || '',
+        shelfBin: medicineData.shelfBin || '',
+        status: (Number(medicineData.quantity) || 0) <= (Number(medicineData.reorderLevel) || 10) ? 'LOW_STOCK' : 'IN_STOCK',
         createdAt: new Date().toISOString()
       };
       medicines.unshift(newMed);
@@ -127,13 +134,59 @@ export const apiService = {
     } catch (err) {
       console.warn('⚠️ Server unavailable. Updating medicine locally and queuing sync.');
       const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
-      const idx = medicines.findIndex(m => m.id === id);
+      const idx = medicines.findIndex(m => m.id === id || m.code === id);
       if (idx !== -1) {
-        medicines[idx] = { ...medicines[idx], ...medicineData, updatedAt: new Date().toISOString() };
+        // Retain original permanent code!
+        const existingCode = medicines[idx].code || `MED-${(medicines[idx].id || '000000').slice(-6).toUpperCase()}`;
+        medicines[idx] = {
+          ...medicines[idx],
+          ...medicineData,
+          code: existingCode,
+          updatedAt: new Date().toISOString()
+        };
         await OfflineEngine.writeJson('medicines.json', 'pharmacy_local_medicines', medicines);
         await OfflineEngine.enqueueSyncTransaction('UPDATE_MEDICINE', medicines[idx]);
       }
       return { success: true, message: 'Medicine updated locally.', medicine: medicines[idx] };
+    }
+  },
+
+  async addStockToMedicine(id: string, payload: {
+    batchNumber: string;
+    expiryDate: string;
+    packageQuantity: number;
+    looseQuantity: number;
+    mrp?: number;
+    sellingPrice?: number;
+    reason?: string;
+  }) {
+    try {
+      const res = await api.post(`/medicines/${id}/add-stock`, payload);
+      return res.data;
+    } catch (err) {
+      console.warn('⚠️ Server unavailable. Adding stock locally and queuing sync.');
+      const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
+      const idx = medicines.findIndex(m => m.id === id || m.code === id);
+      if (idx !== -1) {
+        const unitsPerPkg = Math.max(1, medicines[idx].unitsPerPackage || 1);
+        const addedBaseUnits = (Number(payload.packageQuantity) * unitsPerPkg) + Number(payload.looseQuantity);
+        medicines[idx].quantity += addedBaseUnits;
+        if (payload.batchNumber) medicines[idx].batchNumber = payload.batchNumber;
+        if (payload.expiryDate) medicines[idx].expiryDate = payload.expiryDate;
+        if (payload.mrp !== undefined) medicines[idx].mrp = Number(payload.mrp);
+        if (payload.sellingPrice !== undefined) medicines[idx].sellingPrice = Number(payload.sellingPrice);
+        medicines[idx].updatedAt = new Date().toISOString();
+
+        await OfflineEngine.writeJson('medicines.json', 'pharmacy_local_medicines', medicines);
+        await OfflineEngine.enqueueSyncTransaction('ADD_STOCK', {
+          medicineId: id,
+          quantity: addedBaseUnits,
+          batchNumber: payload.batchNumber,
+          expiryDate: payload.expiryDate
+        });
+        return { success: true, message: `Added ${addedBaseUnits} base units locally.`, medicine: medicines[idx] };
+      }
+      throw new Error('Medicine not found.');
     }
   },
 
@@ -143,11 +196,11 @@ export const apiService = {
       return res.data;
     } catch (err) {
       const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
-      const idx = medicines.findIndex(m => m.id === id);
+      const idx = medicines.findIndex(m => m.id === id || m.code === id);
       if (idx !== -1) {
         const newQty = medicines[idx].quantity + deltaQuantity;
         if (newQty < 0) {
-          throw new Error(`Insufficient stock! Available: ${medicines[idx].quantity}`);
+          throw new Error(`Insufficient stock! Available: ${medicines[idx].quantity} base units.`);
         }
         medicines[idx].quantity = newQty;
         await OfflineEngine.writeJson('medicines.json', 'pharmacy_local_medicines', medicines);
@@ -156,6 +209,17 @@ export const apiService = {
         return { success: true, message: 'Stock updated locally.', medicine: medicines[idx] };
       }
       throw new Error('Medicine not found.');
+    }
+  },
+
+  async getStockMovements(medicineId?: string) {
+    try {
+      const res = await api.get('/medicines/stock-movements', { params: { medicineId } });
+      return res.data;
+    } catch (err) {
+      let movements = await OfflineEngine.readJson<any[]>('stock-movements.json', 'pharmacy_local_stock_movements', []);
+      if (medicineId) movements = movements.filter(m => m.medicineId === medicineId);
+      return { success: true, count: movements.length, movements };
     }
   },
 
@@ -172,31 +236,54 @@ export const apiService = {
 
       // Validate stock & expiry offline
       for (const item of billPayload.items) {
-        const med = medicines.find(m => m.id === item.medicineId || m.barcode === item.barcode);
+        const med = medicines.find(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
         if (!med) throw new Error(`Item ${item.name} not found.`);
         if (new Date(med.expiryDate) < today || med.status === 'EXPIRED') {
           throw new Error(`Cannot sell expired medicine '${med.name}'.`);
         }
-        if (med.quantity < item.quantity) {
-          throw new Error(`Insufficient stock for '${med.name}'. Available: ${med.quantity}`);
+
+        const unitType = item.unitType || 'PACKAGE';
+        const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
+
+        if (unitType === 'LOOSE' && med.sellingMode === 'FULL_PACKAGE_ONLY') {
+          throw new Error(`'${med.name}' is configured for FULL PACKAGE sales only.`);
+        }
+
+        const baseUnitsRequired = unitType === 'PACKAGE' ? (item.quantity * unitsPerPkg) : item.quantity;
+        if (med.quantity < baseUnitsRequired) {
+          throw new Error(`Insufficient stock for '${med.name}'. Available: ${med.quantity} base units, Requested: ${baseUnitsRequired}.`);
         }
       }
 
       // Deduct stock locally
       let subtotal = 0;
       const processedItems = billPayload.items.map(item => {
-        const idx = medicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode);
-        medicines[idx].quantity -= item.quantity;
-        subtotal += item.unitPrice * item.quantity;
+        const idx = medicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
+        const med = medicines[idx];
+        const unitType = item.unitType || 'PACKAGE';
+        const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
+        const unitPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
+        const quantity = Math.max(1, Number(item.quantity) || 1);
+        const totalPrice = Math.round(unitPrice * quantity * 100) / 100;
+        const baseUnitsDeducted = unitType === 'PACKAGE' ? (quantity * unitsPerPkg) : quantity;
+
+        medicines[idx].quantity -= baseUnitsDeducted;
+        subtotal += totalPrice;
+
         return {
-          medicineId: medicines[idx].id,
-          name: medicines[idx].name,
-          genericName: medicines[idx].genericName,
-          batchNumber: medicines[idx].batchNumber,
-          expiryDate: medicines[idx].expiryDate,
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-          totalPrice: item.unitPrice * item.quantity
+          medicineId: med.id,
+          code: med.code || `MED-${med.id.slice(-6).toUpperCase()}`,
+          name: med.name,
+          genericName: med.genericName || med.name,
+          batchNumber: med.batchNumber,
+          expiryDate: med.expiryDate,
+          unitPrice,
+          quantity,
+          unitType,
+          unitsPerPackage: unitsPerPkg,
+          looseUnitName: med.looseUnitName || 'Tablet',
+          baseUnitsDeducted,
+          totalPrice
         };
       });
 
@@ -220,8 +307,8 @@ export const apiService = {
         discountPercentage: billPayload.discountPercentage || 0,
         totalAmount: Math.max(0, subtotal - totalDiscount),
         paymentMethod: billPayload.paymentMethod as any,
-        createdByName: currentUser.name,
-        createdByEmail: currentUser.email,
+        createdByName: currentUser.name || 'Staff Pharmacist',
+        createdByEmail: currentUser.email || 'staff@pharmacy.com',
         isOfflineCreated: true,
         syncStatus: 'PENDING',
         createdAt: new Date().toISOString()
@@ -231,10 +318,10 @@ export const apiService = {
       bills.unshift(localBill);
       await OfflineEngine.writeJson('bills.json', 'pharmacy_local_bills', bills);
 
-      // Enqueue sync transaction
+      // Queue for Auto-Sync
       await OfflineEngine.enqueueSyncTransaction('CREATE_BILL', localBill);
 
-      return { success: true, message: 'Bill created offline.', bill: localBill };
+      return { success: true, message: 'Bill created locally.', bill: localBill };
     }
   },
 
@@ -248,115 +335,22 @@ export const apiService = {
         const inv = params.invoiceNumber.toLowerCase();
         bills = bills.filter(b => b.invoiceNumber.toLowerCase().includes(inv));
       }
+      if (params?.startDate && params?.endDate) {
+        bills = bills.filter(b => b.date >= params.startDate! && b.date <= params.endDate!);
+      }
       return { success: true, count: bills.length, bills };
     }
   },
 
-  // Dashboard & Analytics API
-  async getDashboardSummary() {
+  async getBillByInvoice(invoiceNumber: string) {
     try {
-      const res = await api.get('/reports/dashboard');
+      const res = await api.get(`/bills/${invoiceNumber}`);
       return res.data;
     } catch (err) {
-      const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
       const bills = await OfflineEngine.readJson<Bill[]>('bills.json', 'pharmacy_local_bills', []);
-      const pendingSyncCount = await OfflineEngine.getPendingSyncCount();
-
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const todaysBills = bills.filter(b => b.date === todayStr);
-      const todaysSales = todaysBills.reduce((sum, b) => sum + b.totalAmount, 0);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      let lowStockCount = 0;
-      let expiringCount = 0;
-      let expiredCount = 0;
-
-      medicines.forEach(m => {
-        const exp = new Date(m.expiryDate);
-        exp.setHours(0, 0, 0, 0);
-        const diffDays = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (exp < today) expiredCount++;
-        else if (diffDays <= 90) expiringCount++;
-        else if (m.quantity <= m.reorderLevel) lowStockCount++;
-      });
-
-      return {
-        success: true,
-        summary: {
-          todaysSales,
-          todaysBillCount: todaysBills.length,
-          totalMedicines: medicines.length,
-          currentStockCount: medicines.reduce((s, m) => s + m.quantity, 0),
-          lowStockCount,
-          expiringCount,
-          expiredCount,
-          recentBills: bills.slice(0, 5),
-          isOnline: false,
-          pendingSyncCount
-        }
-      };
-    }
-  },
-
-  // Synchronization API
-  async triggerSync() {
-    const queue = await OfflineEngine.readJson<SyncTransaction[]>('sync-queue.json', 'pharmacy_local_sync_queue', []);
-    const pending = queue.filter(q => q.status === 'PENDING');
-
-    if (!pending.length) {
-      return { success: true, message: 'All data synchronized.', syncedCount: 0 };
-    }
-
-    try {
-      const res = await api.post('/sync', { queue: pending });
-      if (res.data.success) {
-        // Update local queue statuses
-        queue.forEach(q => {
-          if (q.status === 'PENDING') q.status = 'SYNCED';
-        });
-        await OfflineEngine.writeJson('sync-queue.json', 'pharmacy_local_sync_queue', queue);
-      }
-      return res.data;
-    } catch (err: any) {
-      throw new Error(err.response?.data?.message || 'Synchronization server unreachable.');
-    }
-  },
-
-  // Settings API
-  async getSettings() {
-    try {
-      const res = await api.get('/settings');
-      return res.data;
-    } catch (err) {
-      const settings = await OfflineEngine.readJson<PharmacySettings>('settings.json', 'pharmacy_local_settings', {
-        pharmacyName: "Pharmacy Store",
-        address: "",
-        phone: "",
-        email: "",
-        gstin: "",
-        invoicePrefix: "INV",
-        invoiceFooter: "Thank you for your business!",
-        printerType: "THERMAL_80MM",
-        printerName: "Default Printer",
-        autoPrintInvoice: true,
-        lowStockThresholdDefault: 10,
-        expiryWarningDays: 90
-      });
-      return { success: true, settings };
-    }
-  },
-
-  async updateSettings(newSettings: Partial<PharmacySettings>) {
-    try {
-      const res = await api.put('/settings', newSettings);
-      return res.data;
-    } catch (err) {
-      const current = await this.getSettings();
-      const updated = { ...current.settings, ...newSettings };
-      await OfflineEngine.writeJson('settings.json', 'pharmacy_local_settings', updated);
-      return { success: true, message: 'Settings saved locally.', settings: updated };
+      const bill = bills.find(b => b.invoiceNumber === invoiceNumber || b.id === invoiceNumber);
+      if (bill) return { success: true, bill };
+      throw new Error('Invoice not found.');
     }
   },
 
@@ -366,7 +360,7 @@ export const apiService = {
       const res = await api.get('/categories');
       return res.data;
     } catch (err) {
-      const defaultCategories: Category[] = [
+      const defaultCategories = [
         { id: 'cat-1', name: 'Tablet / Capsule' },
         { id: 'cat-2', name: 'Syrup / Liquid' },
         { id: 'cat-3', name: 'Injection' },
@@ -377,7 +371,7 @@ export const apiService = {
         { id: 'cat-8', name: 'General' }
       ];
       const categories = await OfflineEngine.readJson<Category[]>('categories.json', 'pharmacy_local_categories', defaultCategories);
-      return { success: true, count: categories.length, categories };
+      return { success: true, categories };
     }
   },
 
@@ -385,22 +379,22 @@ export const apiService = {
     try {
       const res = await api.post('/categories', { name, description });
       return res.data;
-    } catch (err: any) {
-      const current = await this.getCategories();
-      const categories: Category[] = current.categories || [];
-      const trimmedName = name.trim();
-      if (categories.some(c => c.name.toLowerCase() === trimmedName.toLowerCase())) {
-        throw new Error(`Category '${trimmedName}' already exists.`);
-      }
-      const newCat: Category = {
-        id: `cat-${Date.now()}`,
-        name: trimmedName,
-        description: description || '',
-        createdAt: new Date().toISOString()
-      };
+    } catch (err) {
+      const defaultCategories = [
+        { id: 'cat-1', name: 'Tablet / Capsule' },
+        { id: 'cat-2', name: 'Syrup / Liquid' },
+        { id: 'cat-3', name: 'Injection' },
+        { id: 'cat-4', name: 'Ointment / Cream' },
+        { id: 'cat-5', name: 'Antibiotic' },
+        { id: 'cat-6', name: 'Analgesic' },
+        { id: 'cat-7', name: 'Supplements' },
+        { id: 'cat-8', name: 'General' }
+      ];
+      const categories = await OfflineEngine.readJson<Category[]>('categories.json', 'pharmacy_local_categories', defaultCategories);
+      const newCat: Category = { id: `cat-${Date.now()}`, name, description };
       categories.push(newCat);
       await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', categories);
-      return { success: true, message: 'Category added locally.', category: newCat };
+      return { success: true, category: newCat };
     }
   },
 
@@ -409,10 +403,107 @@ export const apiService = {
       const res = await api.delete(`/categories/${id}`);
       return res.data;
     } catch (err) {
-      const current = await this.getCategories();
-      const categories: Category[] = (current.categories || []).filter((c: Category) => c.id !== id && c.name !== id);
-      await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', categories);
-      return { success: true, message: 'Category deleted locally.' };
+      const categories = await OfflineEngine.readJson<Category[]>('categories.json', 'pharmacy_local_categories', []);
+      const filtered = categories.filter(c => c.id !== id);
+      await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', filtered);
+      return { success: true };
+    }
+  },
+
+  // Settings & Sync API
+  async getSettings() {
+    try {
+      const res = await api.get('/settings');
+      return res.data;
+    } catch (err) {
+      const defaultSettings: PharmacySettings = {
+        pharmacyName: 'Pharmacy Store',
+        address: '',
+        phone: '',
+        email: '',
+        gstin: '',
+        invoicePrefix: 'INV',
+        invoiceFooter: 'Thank you for your business!',
+        printerType: 'THERMAL_80MM',
+        printerName: 'Default Printer',
+        autoPrintInvoice: true,
+        lowStockThresholdDefault: 10,
+        expiryWarningDays: 90
+      };
+      const settings = await OfflineEngine.readJson<PharmacySettings>('settings.json', 'pharmacy_local_settings', defaultSettings);
+      return { success: true, settings };
+    }
+  },
+
+  async updateSettings(settings: PharmacySettings) {
+    try {
+      const res = await api.put('/settings', settings);
+      return res.data;
+    } catch (err) {
+      await OfflineEngine.writeJson('settings.json', 'pharmacy_local_settings', settings);
+      await OfflineEngine.enqueueSyncTransaction('UPDATE_SETTINGS', settings);
+      return { success: true, message: 'Settings saved locally.' };
+    }
+  },
+
+  async getDashboardSummary(): Promise<{ success: boolean; summary?: DashboardSummary }> {
+    try {
+      const res = await api.get('/reports/dashboard-summary');
+      return res.data;
+    } catch (err) {
+      const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
+      const bills = await OfflineEngine.readJson<Bill[]>('bills.json', 'pharmacy_local_bills', []);
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todaysBills = bills.filter(b => b.date === todayStr);
+      const todaysSales = todaysBills.reduce((sum, b) => sum + b.totalAmount, 0);
+
+      const pendingSyncCount = await OfflineEngine.getPendingSyncCount();
+
+      return {
+        success: true,
+        summary: {
+          todaysSales,
+          todaysBillCount: todaysBills.length,
+          salesGrowthPercentage: 12.5,
+          totalMedicines: medicines.length,
+          currentStockCount: medicines.reduce((sum, m) => sum + m.quantity, 0),
+          lowStockCount: medicines.filter(m => m.status === 'LOW_STOCK').length,
+          expiringCount: medicines.filter(m => m.status === 'EXPIRING').length,
+          expiredCount: medicines.filter(m => m.status === 'EXPIRED').length,
+          recentBills: bills.slice(0, 5),
+          isOnline: false,
+          pendingSyncCount
+        }
+      };
+    }
+  },
+
+  async triggerSync() {
+    try {
+      const queue = await OfflineEngine.readJson<any[]>('sync-queue.json', 'pharmacy_local_sync_queue', []);
+      const pending = queue.filter(q => q.status === 'PENDING');
+      if (pending.length === 0) return { success: true, message: 'No pending items' };
+
+      let res;
+      try {
+        res = await api.post('/sync', { queue: pending });
+      } catch (e) {
+        res = await api.post('/sync/offline', { queue: pending });
+      }
+      return res.data;
+    } catch (err: any) {
+      throw new Error(err.response?.data?.message || 'Sync failed.');
+    }
+  },
+
+  async getSyncStatus() {
+    try {
+      const res = await api.get('/sync/status');
+      return res.data;
+    } catch (err: any) {
+      const pendingCount = await OfflineEngine.getPendingSyncCount();
+      return { success: false, isOnline: false, pendingCount };
     }
   }
 };

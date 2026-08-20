@@ -12,20 +12,33 @@ export interface User {
 
 export type MedicineStatus = 'IN_STOCK' | 'LOW_STOCK' | 'EXPIRING' | 'EXPIRED' | 'INACTIVE';
 
+export type SellingMode = 'FULL_PACKAGE_AND_LOOSE' | 'FULL_PACKAGE_ONLY';
+
 export interface Medicine {
   _id?: string;
   id: string;
+  code?: string; // Permanent unique medicine code, e.g. MED-000124
   name: string;
   genericName: string;
   category: string;
   manufacturer: string;
+  strength?: string; // e.g. 500 mg, 100 ml
+  dosageForm?: string; // e.g. Tablet, Capsule, Syrup, Injection, Syringe, Bottle, Vial
+  packageType?: string; // e.g. Strip, Bottle, Box, Pack
+  unitsPerPackage?: number; // e.g. 10 (tablets per strip)
+  sellingMode?: SellingMode; // FULL_PACKAGE_AND_LOOSE | FULL_PACKAGE_ONLY
+  looseUnitName?: string; // e.g. Tablet, Capsule, ml
   batchNumber: string;
   expiryDate: string; // YYYY-MM-DD
   mrp: number;
-  sellingPrice: number;
-  quantity: number;
+  sellingPrice: number; // Price per full package or single unit if unitsPerPackage = 1
+  quantity: number; // Total stock stored in base/loose units
   reorderLevel: number;
   barcode: string;
+  rack?: string;
+  row?: string;
+  column?: string;
+  shelfBin?: string;
   status: MedicineStatus;
   createdAt?: string;
   updatedAt?: string;
@@ -35,25 +48,34 @@ export type PaymentMethod = 'CASH' | 'UPI' | 'CARD';
 
 export interface CartItem {
   medicineId: string;
+  code?: string;
   name: string;
   genericName: string;
   batchNumber: string;
   expiryDate: string;
   mrp: number;
   sellingPrice: number;
-  quantity: number;
-  availableQuantity: number;
+  quantity: number; // Quantity in selected unitType (e.g., 2 strips or 3 loose tablets)
+  unitType?: 'PACKAGE' | 'LOOSE';
+  unitsPerPackage?: number;
+  looseUnitName?: string;
+  availableQuantity: number; // Total available base units
   barcode: string;
 }
 
 export interface BillItem {
   medicineId: string;
+  code?: string;
   name: string;
   genericName: string;
   batchNumber: string;
   expiryDate: string;
   unitPrice: number;
   quantity: number;
+  unitType?: 'PACKAGE' | 'LOOSE';
+  unitsPerPackage?: number;
+  looseUnitName?: string;
+  baseUnitsDeducted?: number;
   totalPrice: number;
 }
 
@@ -115,6 +137,7 @@ export interface PharmacySettings {
 
 export interface DashboardSummary {
   todaysSales: number;
+  todaysBillCount: number;
   salesGrowthPercentage: number;
   totalMedicines: number;
   currentStockCount: number;
@@ -140,4 +163,21 @@ export interface NotificationItem {
   message: string;
   timestamp: string;
   read: boolean;
+}
+
+export type StockMovementType = 'STOCK_IN' | 'STOCK_OUT' | 'ADJUSTMENT' | 'EXPIRY';
+
+export interface StockMovement {
+  _id?: string;
+  id: string;
+  medicineId: string;
+  medicineName: string;
+  code?: string;
+  type: StockMovementType;
+  baseQuantityChange: number; // e.g. +100 or -10
+  batchNumber: string;
+  expiryDate: string;
+  reason?: string;
+  performedByName?: string;
+  createdAt: string;
 }

@@ -146,7 +146,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ bill, onCl
                 </tr>
               </thead>
               <tbody>
-                {bill.items.map((item, index) => (
+                {bill?.items && bill.items.map((item, index) => (
                   <tr key={index} style={{ borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '8px 10px' }}>
                       <div style={{ fontWeight: 600, color: '#0F172A' }}>{item.name}</div>
@@ -155,10 +155,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ bill, onCl
                       )}
                     </td>
                     <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{item.batchNumber}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>{item.quantity}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{item.unitPrice.toFixed(2)}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>
+                      {item.quantity} {item.unitType === 'LOOSE' ? `(${item.looseUnitName || 'Loose'})` : 'Pkg'}
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{(Number(item.unitPrice) || 0).toFixed(2)}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#0F766E' }}>
-                      ₹{item.totalPrice.toFixed(2)}
+                      ₹{(Number(item.totalPrice) || 0).toFixed(2)}
                     </td>
                   </tr>
                 ))}
@@ -179,13 +181,13 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ bill, onCl
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', color: '#64748B' }}>
                 <span>Subtotal:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>₹{bill.subtotal.toFixed(2)}</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>₹{(Number(bill.subtotal) || 0).toFixed(2)}</span>
               </div>
 
-              {bill.discountAmount > 0 && (
+              {(Number(bill.discountAmount) || 0) > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', color: '#16A34A' }}>
-                  <span>Discount ({bill.discountPercentage}%):</span>
-                  <span style={{ fontWeight: 600 }}>-₹{bill.discountAmount.toFixed(2)}</span>
+                  <span>Discount ({bill.discountPercentage || 0}%):</span>
+                  <span style={{ fontWeight: 600 }}>-₹{(Number(bill.discountAmount) || 0).toFixed(2)}</span>
                 </div>
               )}
 
@@ -203,7 +205,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ bill, onCl
                 }}
               >
                 <span>TOTAL:</span>
-                <span>₹{bill.totalAmount.toFixed(2)}</span>
+                <span>₹{(Number(bill.totalAmount) || 0).toFixed(2)}</span>
               </div>
             </div>
 

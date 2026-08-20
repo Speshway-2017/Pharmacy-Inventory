@@ -18,6 +18,8 @@ import { ExpiryRiskReport } from './pages/ExpiryRiskReport';
 import { ExpiryManagement } from './pages/ExpiryManagement';
 import { Settings } from './pages/Settings';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 const MainLayout: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -56,32 +58,34 @@ const MainLayout: React.FC = () => {
         <TopHeader title={getPageTitle()} />
 
         <main className="content-body">
-          {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
-          {activeTab === 'inventory' && <Inventory onOpenAddEditPage={handleOpenAddEditMedicine} />}
-          {activeTab === 'add-medicine' && (
-            <AddEditMedicine
-              medicineToEdit={editingMedicine}
-              onBack={() => {
-                setEditingMedicine(null);
-                setActiveTab('inventory');
-              }}
-              onSuccess={() => {
-                setEditingMedicine(null);
-                setActiveTab('inventory');
-              }}
-            />
-          )}
-          {activeTab === 'billing' && <BillingPOS />}
-          {activeTab === 'history' && <BillHistory />}
-          {activeTab === 'reports' && <Reports />}
-          {activeTab === 'stock-valuation' && (
-            <StockValuationReport onBack={() => setActiveTab('reports')} />
-          )}
-          {activeTab === 'expiry-risk' && (
-            <ExpiryRiskReport onBack={() => setActiveTab('reports')} />
-          )}
-          {activeTab === 'expiry' && <ExpiryManagement />}
-          {activeTab === 'settings' && <Settings />}
+          <ErrorBoundary>
+            {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
+            {activeTab === 'inventory' && <Inventory onOpenAddEditPage={handleOpenAddEditMedicine} />}
+            {activeTab === 'add-medicine' && (
+              <AddEditMedicine
+                medicineToEdit={editingMedicine}
+                onBack={() => {
+                  setEditingMedicine(null);
+                  setActiveTab('inventory');
+                }}
+                onSuccess={() => {
+                  setEditingMedicine(null);
+                  setActiveTab('inventory');
+                }}
+              />
+            )}
+            {activeTab === 'billing' && <BillingPOS />}
+            {activeTab === 'history' && <BillHistory />}
+            {activeTab === 'reports' && <Reports />}
+            {activeTab === 'stock-valuation' && (
+              <StockValuationReport onBack={() => setActiveTab('reports')} />
+            )}
+            {activeTab === 'expiry-risk' && (
+              <ExpiryRiskReport onBack={() => setActiveTab('reports')} />
+            )}
+            {activeTab === 'expiry' && <ExpiryManagement />}
+            {activeTab === 'settings' && <Settings />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

@@ -46,7 +46,24 @@ function writeJsonFile<T>(filename: string, data: T): boolean {
 }
 
 export const LocalStore = {
-  getMedicines: (): any[] => readJsonFile<any[]>('medicines.json', []),
+  getMedicines: (): any[] => {
+    const medicines = readJsonFile<any[]>('medicines.json', []);
+    // Apply safe defaults for legacy medicine records
+    return medicines.map(m => ({
+      ...m,
+      code: m.code || `MED-${(m.id || '000000').slice(-6).toUpperCase()}`,
+      strength: m.strength || '',
+      dosageForm: m.dosageForm || 'Tablet',
+      packageType: m.packageType || 'Strip',
+      unitsPerPackage: m.unitsPerPackage && m.unitsPerPackage >= 1 ? m.unitsPerPackage : 1,
+      sellingMode: m.sellingMode || 'FULL_PACKAGE_ONLY',
+      looseUnitName: m.looseUnitName || 'Tablet',
+      rack: m.rack || '',
+      row: m.row || '',
+      column: m.column || '',
+      shelfBin: m.shelfBin || ''
+    }));
+  },
   saveMedicines: (medicines: any[]) => writeJsonFile('medicines.json', medicines),
 
   getBills: (): any[] => readJsonFile<any[]>('bills.json', []),
@@ -85,6 +102,9 @@ export const LocalStore = {
     { id: 'cat-8', name: 'General' }
   ]),
   saveCategories: (categories: any[]) => writeJsonFile('categories.json', categories),
+
+  getStockMovements: (): any[] => readJsonFile<any[]>('stock-movements.json', []),
+  saveStockMovements: (movements: any[]) => writeJsonFile('stock-movements.json', movements),
 
   addSyncTransaction: (transaction: any) => {
     const queue = readJsonFile<any[]>('sync-queue.json', []);

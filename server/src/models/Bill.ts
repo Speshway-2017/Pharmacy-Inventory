@@ -32,7 +32,7 @@ export interface IBill extends Document {
 const BillItemSchema = new Schema({
   medicineId: { type: String, required: true },
   name: { type: String, required: true },
-  genericName: { type: String, required: true },
+  genericName: { type: String, default: '' },
   batchNumber: { type: String, required: true },
   expiryDate: { type: String, required: true },
   unitPrice: { type: Number, required: true },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Medicine, Category } from '../../../shared/types';
+import { Medicine, Category, SellingMode } from '../../../shared/types';
 import { apiService } from '../services/api';
 import {
   ArrowLeft,
@@ -10,9 +10,10 @@ import {
   Pill,
   Calendar,
   IndianRupee,
-  Boxes,
-  Tag,
-  AlertCircle
+  MapPin,
+  PackageCheck,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface AddEditMedicineProps {
@@ -20,6 +21,9 @@ interface AddEditMedicineProps {
   onBack: () => void;
   onSuccess: () => void;
 }
+
+const DOSAGE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Syringe', 'Bottle', 'Vial', 'Other'];
+const PACKAGE_TYPES = ['Strip', 'Bottle', 'Box', 'Pack', 'Vial', 'Blister', 'Other'];
 
 export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
   medicineToEdit,
@@ -30,18 +34,48 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
   const [newCatInput, setNewCatInput] = useState<string>('');
   const [showAddCatInput, setShowAddCatInput] = useState<boolean>(false);
 
+  // Derive initial package & loose quantities if editing existing stock
+  const initialUnitsPerPkg = medicineToEdit?.unitsPerPackage || 1;
+  const initialBaseQty = medicineToEdit?.quantity || 0;
+  const initialPkgQty = Math.floor(initialBaseQty / initialUnitsPerPkg);
+  const initialLooseQty = initialBaseQty % initialUnitsPerPkg;
+
+  const [packageQty, setPackageQty] = useState<number | ''>(medicineToEdit ? initialPkgQty : '');
+  const [looseQty, setLooseQty] = useState<number | ''>(medicineToEdit ? initialLooseQty : '');
+
+  const generatePermanentCode = (): string => {
+    const num = Math.floor(100000 + Math.random() * 900000);
+    return `MED-${num}`;
+  };
+
+  const generateBatchNumber = (): string => {
+    const year = new Date().getFullYear();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `BTC-${year}-${rand}`;
+  };
+
   const [formData, setFormData] = useState({
+    code: medicineToEdit?.code || generatePermanentCode(),
     name: medicineToEdit?.name || '',
     genericName: medicineToEdit?.genericName || '',
     category: medicineToEdit?.category || 'Tablet / Capsule',
     manufacturer: medicineToEdit?.manufacturer || '',
-    batchNumber: medicineToEdit?.batchNumber || '',
+    strength: medicineToEdit?.strength || '',
+    dosageForm: medicineToEdit?.dosageForm || 'Tablet',
+    packageType: medicineToEdit?.packageType || 'Strip',
+    unitsPerPackage: medicineToEdit?.unitsPerPackage !== undefined ? medicineToEdit.unitsPerPackage : 10,
+    sellingMode: (medicineToEdit?.sellingMode || 'FULL_PACKAGE_ONLY') as SellingMode,
+    looseUnitName: medicineToEdit?.looseUnitName || 'Tablet',
+    batchNumber: medicineToEdit?.batchNumber || generateBatchNumber(),
     expiryDate: medicineToEdit?.expiryDate || '',
     mrp: medicineToEdit?.mrp !== undefined ? medicineToEdit.mrp : '',
     sellingPrice: medicineToEdit?.sellingPrice !== undefined ? medicineToEdit.sellingPrice : '',
-    quantity: medicineToEdit?.quantity !== undefined ? medicineToEdit.quantity : '',
     reorderLevel: medicineToEdit?.reorderLevel !== undefined ? medicineToEdit.reorderLevel : 10,
-    barcode: medicineToEdit?.barcode || ''
+    barcode: medicineToEdit?.barcode || '',
+    rack: medicineToEdit?.rack || '',
+    row: medicineToEdit?.row || '',
+    column: medicineToEdit?.column || '',
+    shelfBin: medicineToEdit?.shelfBin || ''
   });
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -63,7 +97,36 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
 
   useEffect(() => {
     loadCategories();
-  }, []);
+    if (medicineToEdit) {
+      const uPerPkg = medicineToEdit.unitsPerPackage || 1;
+      const bQty = medicineToEdit.quantity || 0;
+      setPackageQty(Math.floor(bQty / uPerPkg));
+      setLooseQty(bQty % uPerPkg);
+      setFormData({
+        code: medicineToEdit.code || generatePermanentCode(),
+        name: medicineToEdit.name || '',
+        genericName: medicineToEdit.genericName || '',
+        category: medicineToEdit.category || 'Tablet / Capsule',
+        manufacturer: medicineToEdit.manufacturer || '',
+        strength: medicineToEdit.strength || '',
+        dosageForm: medicineToEdit.dosageForm || 'Tablet',
+        packageType: medicineToEdit.packageType || 'Strip',
+        unitsPerPackage: medicineToEdit.unitsPerPackage !== undefined ? medicineToEdit.unitsPerPackage : 10,
+        sellingMode: (medicineToEdit.sellingMode || 'FULL_PACKAGE_ONLY') as SellingMode,
+        looseUnitName: medicineToEdit.looseUnitName || 'Tablet',
+        batchNumber: medicineToEdit.batchNumber || generateBatchNumber(),
+        expiryDate: medicineToEdit.expiryDate || '',
+        mrp: medicineToEdit.mrp !== undefined ? medicineToEdit.mrp : '',
+        sellingPrice: medicineToEdit.sellingPrice !== undefined ? medicineToEdit.sellingPrice : '',
+        reorderLevel: medicineToEdit.reorderLevel !== undefined ? medicineToEdit.reorderLevel : 10,
+        barcode: medicineToEdit.barcode || '',
+        rack: medicineToEdit.rack || '',
+        row: medicineToEdit.row || '',
+        column: medicineToEdit.column || '',
+        shelfBin: medicineToEdit.shelfBin || ''
+      });
+    }
+  }, [medicineToEdit]);
 
   const generateBarcode = () => {
     const code = `${Math.floor(8900000000000 + Math.random() * 99999999999)}`;
@@ -85,24 +148,38 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
     }
   };
 
+  // Calculate total base units
+  const unitsPerPkg = Math.max(1, Number(formData.unitsPerPackage) || 1);
+  const calculatedTotalBaseUnits = (Number(packageQty || 0) * unitsPerPkg) + Number(looseQty || 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.batchNumber || !formData.expiryDate || formData.sellingPrice === '' || formData.quantity === '') {
+    if (!formData.name || !formData.batchNumber || !formData.expiryDate || formData.sellingPrice === '') {
       setError('Please complete all mandatory fields marked with (*).');
+      return;
+    }
+
+    if (unitsPerPkg < 1) {
+      setError('Units per package must be at least 1.');
       return;
     }
 
     setLoading(true);
     setError(null);
 
+    const payload = {
+      ...formData,
+      unitsPerPackage: unitsPerPkg,
+      quantity: calculatedTotalBaseUnits
+    };
+
     try {
       if (medicineToEdit?.id) {
-        await apiService.updateMedicine(medicineToEdit.id, formData as any);
+        await apiService.updateMedicine(medicineToEdit.id, payload as any);
       } else {
-        await apiService.addMedicine(formData as any);
+        await apiService.addMedicine(payload as any);
       }
       onSuccess();
-      onBack();
     } catch (err: any) {
       setError(err.message || 'Failed to save medicine record.');
     } finally {
@@ -112,7 +189,7 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto' }}>
-      {/* Redesigned Clean Header Bar */}
+      {/* Top Header Card */}
       <div
         style={{
           display: 'flex',
@@ -141,17 +218,17 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
 
           <div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {medicineToEdit ? `Edit Record: ${medicineToEdit.name}` : 'New Medicine Registration'}
+              {medicineToEdit ? `Edit Medicine: ${medicineToEdit.name}` : 'New Medicine Registration'}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Configure product attributes, batch tracking, pricing & stock limits
+              Configure product details, packaging mode, stock levels, storage rack, and expiry
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="badge badge-in-stock" style={{ padding: '6px 12px', fontSize: '12px' }}>
-            {medicineToEdit ? 'Editing Mode' : 'New Item Setup'}
+            {medicineToEdit ? `Code: ${medicineToEdit.code || medicineToEdit.id}` : 'New Item Setup'}
           </span>
         </div>
       </div>
@@ -180,14 +257,14 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
         {/* 2-Column Grid Layout */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
           
-          {/* LEFT COLUMN: Basic Info & Batch Expiry */}
+          {/* LEFT COLUMN: Basic Info, Packaging & Batch/Expiry */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {/* Card 1: Basic Information */}
+            {/* SECTION 1: Basic Medicine Information */}
             <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <Pill size={18} color="var(--primary-teal)" />
-                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Basic Medicine Information</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>1. Basic Identification</h3>
               </div>
 
               <div className="form-group">
@@ -195,7 +272,7 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="e.g. Paracetamol 500mg, Amoxicillin 250mg..."
+                  placeholder="e.g. Paracetamol 650mg"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   required
@@ -207,10 +284,36 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="e.g. Acetaminophen, Azithromycin Dihydrate..."
+                  placeholder="e.g. Acetaminophen"
                   value={formData.genericName}
                   onChange={e => setFormData({ ...formData, genericName: e.target.value })}
                 />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="form-group">
+                  <label className="form-label">Strength / Size</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. 650 mg, 100 ml, 5 ml"
+                    value={formData.strength}
+                    onChange={e => setFormData({ ...formData, strength: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Dosage Form</label>
+                  <select
+                    className="form-control"
+                    value={formData.dosageForm}
+                    onChange={e => setFormData({ ...formData, dosageForm: e.target.value })}
+                  >
+                    {DOSAGE_FORMS.map(form => (
+                      <option key={form} value={form}>{form}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -267,25 +370,98 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
               </div>
             </div>
 
-            {/* Card 2: Batch & Expiry */}
+            {/* SECTION 2: Packaging & Selling Configuration */}
             <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
-                <Calendar size={18} color="var(--primary-blue)" />
-                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Batch & Expiry Tracking</h3>
+                <PackageCheck size={18} color="var(--primary-blue)" />
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>2. Packaging & Selling Configuration</h3>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="form-group">
+                  <label className="form-label">Package Type</label>
+                  <select
+                    className="form-control"
+                    value={formData.packageType}
+                    onChange={e => setFormData({ ...formData, packageType: e.target.value })}
+                  >
+                    {PACKAGE_TYPES.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Units Per Package (e.g. 10)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-control"
+                    placeholder="e.g. 10"
+                    value={formData.unitsPerPackage}
+                    onChange={e => setFormData({ ...formData, unitsPerPackage: Math.max(1, parseInt(e.target.value) || 1) })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="form-group">
+                  <label className="form-label">Selling Mode *</label>
+                  <select
+                    className="form-control"
+                    value={formData.sellingMode}
+                    onChange={e => setFormData({ ...formData, sellingMode: e.target.value as SellingMode })}
+                  >
+                    <option value="FULL_PACKAGE_ONLY">Full Package Only</option>
+                    <option value="FULL_PACKAGE_AND_LOOSE">Full Package + Loose Unit</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Loose Unit Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Tablet, Capsule, ml"
+                    value={formData.looseUnitName}
+                    onChange={e => setFormData({ ...formData, looseUnitName: e.target.value })}
+                    disabled={formData.sellingMode === 'FULL_PACKAGE_ONLY'}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 4: Batch & Expiry Tracking */}
+            <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
+                <Calendar size={18} color="#D97706" />
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>4. Batch & Expiry Details</h3>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div className="form-group">
                   <label className="form-label">Batch Number *</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    style={{ fontFamily: 'monospace', fontWeight: 600 }}
-                    placeholder="e.g. PCM-2026-A1"
-                    value={formData.batchNumber}
-                    onChange={e => setFormData({ ...formData, batchNumber: e.target.value })}
-                    required
-                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ fontFamily: 'monospace', fontWeight: 600 }}
+                      placeholder="e.g. BTC-2026-9182"
+                      value={formData.batchNumber}
+                      onChange={e => setFormData({ ...formData, batchNumber: e.target.value })}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setFormData(prev => ({ ...prev, batchNumber: generateBatchNumber() }))}
+                      title="Generate New Batch Number"
+                      style={{ padding: '0 12px' }}
+                    >
+                      <RefreshCw size={14} />
+                      <span>Generate</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -303,14 +479,14 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
 
           </div>
 
-          {/* RIGHT COLUMN: Pricing, Stock & Barcode */}
+          {/* RIGHT COLUMN: Pricing, Location & Barcode */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-            {/* Card 3: Pricing & Stock Limits */}
+            {/* SECTION 3: Pricing & Stock Inventory */}
             <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <IndianRupee size={18} color="#059669" />
-                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Pricing & Inventory Quantity</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>3. Pricing & Initial Stock</h3>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -341,41 +517,147 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
                 </div>
               </div>
 
+              {/* Stock Quantity in Packages & Loose Units */}
+              <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '8px', marginBottom: '14px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                  Initial Stock Quantity Entry
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px' }}>Full {formData.packageType}s</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="form-control"
+                      placeholder="0"
+                      value={packageQty}
+                      onChange={e => setPackageQty(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px' }}>Loose {formData.looseUnitName}s</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="form-control"
+                      placeholder="0"
+                      value={looseQty}
+                      onChange={e => setLooseQty(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
+                      disabled={formData.sellingMode === 'FULL_PACKAGE_ONLY'}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#0F766E', fontWeight: 600 }}>
+                  Calculated Total Stock: {calculatedTotalBaseUnits} base {formData.looseUnitName.toLowerCase()}s
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Reorder Alert Threshold (Base Units)</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={formData.reorderLevel}
+                  onChange={e => setFormData({ ...formData, reorderLevel: Number(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+
+            {/* SECTION 5: Physical Pharmacy Storage Location */}
+            <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
+                <MapPin size={18} color="#7C3AED" />
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>5. Physical Storage Location</h3>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div className="form-group">
-                  <label className="form-label">Initial Stock Qty *</label>
+                  <label className="form-label">Rack</label>
                   <input
-                    type="number"
+                    type="text"
                     className="form-control"
-                    style={{ fontWeight: 700 }}
-                    placeholder="0"
-                    value={formData.quantity}
-                    onChange={e => setFormData({ ...formData, quantity: e.target.value })}
-                    required
+                    placeholder="e.g. A"
+                    value={formData.rack}
+                    onChange={e => setFormData({ ...formData, rack: e.target.value })}
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Reorder Alert Level</label>
+                  <label className="form-label">Row</label>
                   <input
-                    type="number"
+                    type="text"
                     className="form-control"
-                    value={formData.reorderLevel}
-                    onChange={e => setFormData({ ...formData, reorderLevel: Number(e.target.value) || 0 })}
+                    placeholder="e.g. 03"
+                    value={formData.row}
+                    onChange={e => setFormData({ ...formData, row: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="form-group">
+                  <label className="form-label">Column</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. 05"
+                    value={formData.column}
+                    onChange={e => setFormData({ ...formData, column: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Shelf / Bin</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. B-12"
+                    value={formData.shelfBin}
+                    onChange={e => setFormData({ ...formData, shelfBin: e.target.value })}
                   />
                 </div>
               </div>
             </div>
 
-            {/* Card 4: Barcode / SKU Code */}
+            {/* SECTION 6: Barcode & Identification */}
             <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <Barcode size={18} color="#2563EB" />
-                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Barcode & Identification</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>6. Barcode & Permanent Code</h3>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Barcode Number / SKU Code</label>
+                <label className="form-label">Permanent Item Code *</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{ fontFamily: 'monospace', fontWeight: 700, background: '#F8FAFC' }}
+                    value={formData.code}
+                    onChange={e => setFormData({ ...formData, code: e.target.value })}
+                    placeholder="e.g. MED-000124"
+                    required
+                  />
+                  {!medicineToEdit && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setFormData(prev => ({ ...prev, code: generatePermanentCode() }))}
+                      title="Regenerate Item Code"
+                      style={{ padding: '0 12px' }}
+                    >
+                      <RefreshCw size={14} />
+                      <span>Generate</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Barcode / SKU Code</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
                     type="text"
@@ -391,24 +673,6 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
                   </button>
                 </div>
               </div>
-
-              {formData.barcode && (
-                <div
-                  style={{
-                    background: '#F8FAFC',
-                    border: '1px dashed #CBD5E1',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    textAlign: 'center',
-                    marginTop: '10px'
-                  }}
-                >
-                  <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>BARCODE PREVIEW</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '16px', fontWeight: 800, letterSpacing: '2px' }}>
-                    |||| ||| ||||| {formData.barcode}
-                  </div>
-                </div>
-              )}
             </div>
 
           </div>
