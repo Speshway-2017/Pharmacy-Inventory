@@ -16,6 +16,7 @@ local-data/*.json
 
 # Electron builder artifacts
 release/
+dist-electron/
 *.exe
 *.AppImage
 *.dmg
