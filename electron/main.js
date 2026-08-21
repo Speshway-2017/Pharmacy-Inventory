@@ -62,10 +62,35 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+function startEmbeddedBackendServer() {
+  const possiblePaths = [
+    path.join(__dirname, '../server/dist/server.js'),
+    path.join(process.resourcesPath || '', 'app/server/dist/server.js'),
+    path.join(process.resourcesPath || '', 'server/dist/server.js')
+  ];
+
+  for (const serverPath of possiblePaths) {
+    if (fs.existsSync(serverPath)) {
+      try {
+        console.log(`🚀 Launching embedded API server from: ${serverPath}`);
+        require(serverPath);
+        return true;
+      } catch (err) {
+        if (err && err.code === 'EADDRINUSE') {
+          console.log('ℹ️ Pharmacy API server already active on port 5000.');
+          return true;
+        }
+        console.error('⚠️ Could not launch embedded backend server:', err);
+      }
+    }
+  }
+  console.warn('⚠️ Compiled server.js not found for embedded launch.');
+  return false;
 }
 
 app.whenReady().then(() => {
   ensureDataDir();
+  startEmbeddedBackendServer();
   createWindow();
 
   app.on('activate', () => {
