@@ -3,8 +3,20 @@ import dotenv from 'dotenv';
 import path from 'path';
 import dns from 'dns';
 
-// Always load from the SINGLE root .env file
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+import fs from 'fs';
+
+// Load .env from workspace root, current working directory, or packaged Electron resources directory
+const envPaths = [
+  path.resolve(__dirname, '../../../.env'),
+  path.resolve(process.cwd(), '.env'),
+  path.resolve((process as any).resourcesPath || '', '.env')
+];
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 // Disable Mongoose command buffering to prevent 10,000ms timeout hangs when offline/unreachable
 mongoose.set('bufferCommands', false);

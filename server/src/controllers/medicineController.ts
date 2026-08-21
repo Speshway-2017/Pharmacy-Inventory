@@ -37,20 +37,36 @@ const generatePermanentCode = (): string => {
   return `MED-${num}`;
 };
 
-const applyDefaults = (m: any) => ({
-  ...m,
-  code: m.code || `MED-${(m.id || '000000').slice(-6).toUpperCase()}`,
-  strength: m.strength || '',
-  dosageForm: m.dosageForm || 'Tablet',
-  packageType: m.packageType || 'Strip',
-  unitsPerPackage: m.unitsPerPackage && Number(m.unitsPerPackage) >= 1 ? Number(m.unitsPerPackage) : 1,
-  sellingMode: m.sellingMode || 'FULL_PACKAGE_ONLY',
-  looseUnitName: m.looseUnitName || 'Tablet',
-  rack: m.rack || '',
-  row: m.row || '',
-  column: m.column || '',
-  shelfBin: m.shelfBin || ''
-});
+const applyDefaults = (doc: any) => {
+  if (!doc) return doc;
+  const m = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  return {
+    ...m,
+    id: m.id || m._id?.toString() || `med-${Date.now()}`,
+    code: m.code || `MED-${(m.id || '000000').slice(-6).toUpperCase()}`,
+    name: m.name || '',
+    genericName: m.genericName || m.name || '',
+    category: m.category || 'General',
+    manufacturer: m.manufacturer || '',
+    strength: m.strength || '',
+    dosageForm: m.dosageForm || 'Tablet',
+    packageType: m.packageType || 'Strip',
+    unitsPerPackage: m.unitsPerPackage && Number(m.unitsPerPackage) >= 1 ? Number(m.unitsPerPackage) : 1,
+    sellingMode: m.sellingMode || 'FULL_PACKAGE_ONLY',
+    looseUnitName: m.looseUnitName || 'Tablet',
+    batchNumber: m.batchNumber || '',
+    expiryDate: m.expiryDate || '',
+    mrp: m.mrp !== undefined ? Number(m.mrp) : (Number(m.sellingPrice) || 0),
+    sellingPrice: m.sellingPrice !== undefined ? Number(m.sellingPrice) : 0,
+    quantity: m.quantity !== undefined ? Number(m.quantity) : 0,
+    reorderLevel: m.reorderLevel !== undefined ? Number(m.reorderLevel) : 10,
+    barcode: m.barcode || '',
+    rack: m.rack || '',
+    row: m.row || '',
+    column: m.column || '',
+    shelfBin: m.shelfBin || ''
+  };
+};
 
 export const getMedicines = async (req: Request, res: Response) => {
   try {
@@ -78,7 +94,7 @@ export const getMedicines = async (req: Request, res: Response) => {
         ];
       }
 
-      medicines = await Medicine.find(query).sort({ name: 1 });
+      medicines = await Medicine.find(query).sort({ name: 1 }).lean();
     }
 
     if (!medicines.length) {
@@ -118,6 +134,11 @@ export const getMedicines = async (req: Request, res: Response) => {
       const currentStatus = computeMedicineStatus(withDef.quantity, withDef.reorderLevel || 10, withDef.expiryDate);
       return { ...withDef, status: currentStatus };
     });
+
+    // Mirror to local storage if DB was connected so offline cache stays updated
+    if (getIsDBConnected() && updated.length > 0 && !search && !category && !dosageForm && !status && !barcode && !rack) {
+      LocalStore.saveMedicines(updated);
+    }
 
     return res.json({ success: true, count: updated.length, medicines: updated });
   } catch (error: any) {

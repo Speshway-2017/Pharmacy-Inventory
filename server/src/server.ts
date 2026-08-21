@@ -16,8 +16,20 @@ import syncRoutes from './routes/syncRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import categoryRoutes from './routes/categoryRoutes';
 
-// Always load from the SINGLE root .env file
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+import fs from 'fs';
+
+// Load .env from workspace root, current working directory, or packaged Electron resources directory
+const envPaths = [
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(process.cwd(), '.env'),
+  path.resolve((process as any).resourcesPath || '', '.env')
+];
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;

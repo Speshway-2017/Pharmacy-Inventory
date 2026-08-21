@@ -236,7 +236,7 @@ export const getBills = async (req: Request, res: Response) => {
       if (startDate && endDate) {
         query.date = { $gte: startDate, $lte: endDate };
       }
-      bills = await Bill.find(query).sort({ createdAt: -1 });
+      bills = await Bill.find(query).sort({ createdAt: -1 }).lean();
     }
 
     if (!bills.length) {
@@ -262,7 +262,7 @@ export const getBillByInvoice = async (req: Request, res: Response) => {
     let bill: any = null;
 
     if (getIsDBConnected()) {
-      bill = await Bill.findOne({ invoiceNumber });
+      bill = await Bill.findOne({ invoiceNumber }).lean();
     }
 
     if (!bill) {

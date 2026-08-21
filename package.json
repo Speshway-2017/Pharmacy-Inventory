@@ -21,5 +21,25 @@
     "electron": "^29.1.5",
     "electron-builder": "^24.13.3",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.pharmacy.inventory.pos",
+    "productName": "Pharmacy Inventory & POS Billing",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "client/dist/**/*",
+      "server/dist/**/*",
+      "local-data/**/*",
+      ".env"
+    ],
+    "extraResources": [
+      ".env"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   }
 }
