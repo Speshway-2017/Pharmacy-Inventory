@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const apiUrl = env.VITE_API_URL || env.VITE_API_BASE_URL || 'http://localhost:5000';
 
   return {
+    base: './',
     plugins: [react()],
     server: {
       host: '0.0.0.0',
