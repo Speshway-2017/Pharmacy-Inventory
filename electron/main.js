@@ -62,6 +62,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
 function startEmbeddedBackendServer() {
   const possiblePaths = [
     path.join(__dirname, '../server/dist/server.js'),
