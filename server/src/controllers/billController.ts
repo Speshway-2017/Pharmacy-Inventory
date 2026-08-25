@@ -237,9 +237,10 @@ export const getBills = async (req: Request, res: Response) => {
         query.date = { $gte: startDate, $lte: endDate };
       }
       bills = await Bill.find(query).sort({ createdAt: -1 }).lean();
-    }
-
-    if (!bills.length) {
+      if (!invoiceNumber && !startDate && !endDate) {
+        LocalStore.saveBills(bills);
+      }
+    } else {
       bills = LocalStore.getBills();
       if (invoiceNumber) {
         const inv = (invoiceNumber as string).toLowerCase();

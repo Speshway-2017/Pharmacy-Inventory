@@ -5,6 +5,8 @@ import { initAdminAccount } from './authController';
 import SyncLog from '../models/SyncLog';
 import Bill from '../models/Bill';
 import Medicine from '../models/Medicine';
+import Category from '../models/Category';
+import PharmacySettings from '../models/PharmacySettings';
 
 export const syncOfflineTransactions = async (req: Request, res: Response) => {
   try {
@@ -45,7 +47,6 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
         if (existingLog) {
           console.log(`ℹ️ Transaction ${transactionId} already synchronized previously. Skipping duplicate.`);
           syncedCount++;
-          // Update local status
           const idx = currentQueue.findIndex((q: any) => q.transactionId === transactionId);
           if (idx !== -1) currentQueue[idx].status = 'SYNCED';
           continue;
@@ -56,13 +57,11 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
 
         // Process Operation
         if (operation === 'CREATE_BILL') {
-          // Check if invoice number exists to prevent duplicate bill
           const existingBill = await Bill.findOne({ invoiceNumber: cleanPayload.invoiceNumber });
           if (!existingBill) {
             await Bill.create({ ...cleanPayload, syncStatus: 'SYNCED', isOfflineCreated: true });
           }
 
-          // Safely synchronize stock deduction in MongoDB without blind overwrite!
           for (const item of cleanPayload.items) {
             const deducted = item.baseUnitsDeducted || (item.quantity * (item.unitsPerPackage || 1));
             await Medicine.findOneAndUpdate(
@@ -71,7 +70,6 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
             );
           }
         } else if (operation === 'DEDUCT_STOCK') {
-          // Safe stock operation sync
           await Medicine.findOneAndUpdate(
             { id: cleanPayload.medicineId },
             { $inc: { quantity: -cleanPayload.quantity } }
@@ -88,6 +86,13 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
           }
         } else if (operation === 'UPDATE_MEDICINE') {
           await Medicine.findOneAndUpdate({ id: cleanPayload.id }, cleanPayload, { upsert: true });
+        } else if (operation === 'CREATE_CATEGORY') {
+          const existingCat = await Category.findOne({ name: cleanPayload.name });
+          if (!existingCat) {
+            await Category.create(cleanPayload);
+          }
+        } else if (operation === 'UPDATE_SETTINGS') {
+          await PharmacySettings.findOneAndUpdate({}, cleanPayload, { upsert: true });
         }
 
         // Log successful sync in MongoDB
@@ -101,7 +106,6 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
 
         syncedCount++;
 
-        // Update status in Local Queue
         const idx = currentQueue.findIndex((q: any) => q.transactionId === transactionId);
         if (idx !== -1) {
           currentQueue[idx].status = 'SYNCED';
@@ -118,24 +122,34 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
       }
     }
 
-    // Save updated queue back to local storage
-    LocalStore.saveSyncQueue(currentQueue);
+    // REQUIREMENT: "after cloud syncing the data no need to store in local [queue]"
+    // Filter out successfully synced items from local sync-queue.json so queue stays clean
+    const remainingQueue = currentQueue.filter((q: any) => q.status !== 'SYNCED');
+    LocalStore.saveSyncQueue(remainingQueue);
 
-    // Also update bills' sync status in local store
-    const localBills = LocalStore.getBills();
-    localBills.forEach((b: any) => {
-      if (b.isOfflineCreated && b.syncStatus !== 'SYNCED') {
-        b.syncStatus = 'SYNCED';
+    // REQUIREMENT: "if it is offline all the data which is in the database should fetch"
+    // Refresh local JSON stores with latest Cloud MongoDB state so offline cache contains all DB data
+    if (getIsDBConnected()) {
+      try {
+        const cloudMeds = await Medicine.find().lean();
+        LocalStore.saveMedicines(cloudMeds);
+
+        const cloudBills = await Bill.find().sort({ createdAt: -1 }).lean();
+        LocalStore.saveBills(cloudBills);
+
+        const cloudCategories = await Category.find().sort({ name: 1 }).lean();
+        LocalStore.saveCategories(cloudCategories);
+      } catch (cacheErr: any) {
+        console.warn('⚠️ Could not update local persistent cache post-sync:', cacheErr.message);
       }
-    });
-    LocalStore.saveBills(localBills);
+    }
 
     return res.json({
       success: true,
-      message: `Synchronization complete. ${syncedCount} items synced, ${failedCount} failed.`,
+      message: `Synchronization complete. ${syncedCount} items synced to cloud, ${failedCount} failed.`,
       syncedCount,
       failedCount,
-      remainingPending: currentQueue.filter((q: any) => q.status === 'PENDING').length
+      remainingPending: remainingQueue.filter((q: any) => q.status === 'PENDING').length
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });

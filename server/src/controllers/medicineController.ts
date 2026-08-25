@@ -95,9 +95,7 @@ export const getMedicines = async (req: Request, res: Response) => {
       }
 
       medicines = await Medicine.find(query).sort({ name: 1 }).lean();
-    }
-
-    if (!medicines.length) {
+    } else {
       medicines = LocalStore.getMedicines();
       if (search) {
         const q = (search as string).toLowerCase();
@@ -136,7 +134,7 @@ export const getMedicines = async (req: Request, res: Response) => {
     });
 
     // Mirror to local storage if DB was connected so offline cache stays updated
-    if (getIsDBConnected() && updated.length > 0 && !search && !category && !dosageForm && !status && !barcode && !rack) {
+    if (getIsDBConnected() && !search && !category && !dosageForm && !status && !barcode && !rack) {
       LocalStore.saveMedicines(updated);
     }
 
@@ -544,9 +542,7 @@ export const getStockMovements = async (req: Request, res: Response) => {
       let query: any = {};
       if (medicineId) query.medicineId = medicineId;
       movements = await StockMovement.find(query).sort({ createdAt: -1 }).limit(100);
-    }
-
-    if (!movements.length) {
+    } else {
       movements = LocalStore.getStockMovements();
       if (medicineId) {
         movements = movements.filter(m => m.medicineId === medicineId);
