@@ -10,15 +10,35 @@ import PharmacySettings from '../models/PharmacySettings';
 
 export const syncOfflineTransactions = async (req: Request, res: Response) => {
   try {
-    const { queue } = req.body;
-    const transactionsToSync = queue || LocalStore.getSyncQueue().filter((t: any) => t.status === 'PENDING');
-
-    if (!transactionsToSync || transactionsToSync.length === 0) {
-      return res.json({ success: true, message: 'No pending offline transactions to sync.', processedCount: 0 });
-    }
-
     if (!getIsDBConnected()) {
       await connectDB();
+    }
+
+    const { queue } = req.body;
+    const clientQueue = Array.isArray(queue) ? queue : [];
+    const serverQueue = LocalStore.getSyncQueue();
+
+    // Merge transactions by transactionId or id to avoid missing any pending offline items
+    const mergedMap = new Map<string, any>();
+    [...serverQueue, ...clientQueue].forEach(item => {
+      if (item && (item.transactionId || item.id)) {
+        const key = item.transactionId || item.id;
+        if (item.status === 'PENDING' || !mergedMap.has(key)) {
+          mergedMap.set(key, item);
+        }
+      }
+    });
+
+    const allQueueItems = Array.from(mergedMap.values());
+    const transactionsToSync = allQueueItems.filter((t: any) => t.status === 'PENDING');
+
+    if (!transactionsToSync || transactionsToSync.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No pending offline transactions to sync.',
+        processedCount: 0,
+        isOnline: getIsDBConnected()
+      });
     }
 
     if (getIsDBConnected()) {
@@ -32,7 +52,7 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
 
     let syncedCount = 0;
     let failedCount = 0;
-    const currentQueue = LocalStore.getSyncQueue();
+    const currentQueue = allQueueItems;
 
     for (const tx of transactionsToSync) {
       if (!getIsDBConnected()) {
@@ -157,6 +177,10 @@ export const syncOfflineTransactions = async (req: Request, res: Response) => {
 };
 
 export const getSyncStatus = async (req: Request, res: Response) => {
+  if (!getIsDBConnected()) {
+    await connectDB();
+  }
+
   const queue = LocalStore.getSyncQueue();
   const pendingCount = queue.filter((t: any) => t.status === 'PENDING').length;
   const failedCount = queue.filter((t: any) => t.status === 'FAILED').length;

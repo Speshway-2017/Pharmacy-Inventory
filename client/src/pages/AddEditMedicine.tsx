@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Medicine, Category, SellingMode } from '../../../shared/types';
 import { apiService } from '../services/api';
 import {
@@ -13,7 +13,11 @@ import {
   MapPin,
   PackageCheck,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Sparkles,
+  Layers,
+  Search,
+  ChevronDown
 } from 'lucide-react';
 
 interface AddEditMedicineProps {
@@ -25,12 +29,130 @@ interface AddEditMedicineProps {
 const DOSAGE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Syringe', 'Bottle', 'Vial', 'Other'];
 const PACKAGE_TYPES = ['Strip', 'Bottle', 'Box', 'Pack', 'Vial', 'Blister', 'Other'];
 
+interface ComboboxInputProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  options: string[];
+  onChange: (val: string) => void;
+  onSelectOption?: (val: string) => void;
+}
+
+const ComboboxInput: React.FC<ComboboxInputProps> = ({
+  label,
+  placeholder,
+  value,
+  options,
+  onChange,
+  onSelectOption
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="form-group" style={{ position: 'relative' }} ref={containerRef}>
+      <label className="form-label">{label}</label>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          type="text"
+          className="form-control"
+          placeholder={placeholder}
+          value={value}
+          onChange={e => {
+            onChange(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          style={{ paddingRight: '36px' }}
+        />
+        {options.length > 0 && (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setIsOpen(prev => !prev)}
+            style={{
+              position: 'absolute',
+              right: '8px',
+              background: 'transparent',
+              border: 'none',
+              color: '#64748B',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <ChevronDown size={16} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && options.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 999,
+            background: '#FFFFFF',
+            border: '1px solid #CBD5E1',
+            borderRadius: '10px',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+            marginTop: '4px',
+            maxHeight: '180px',
+            overflowY: 'auto'
+          }}
+        >
+          <div style={{ padding: '6px 12px', background: '#F8FAFC', fontSize: '11px', fontWeight: 700, color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>
+            Select existing or type custom:
+          </div>
+          {options.map(opt => (
+            <div
+              key={opt}
+              style={{
+                padding: '9px 14px',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#1E293B',
+                cursor: 'pointer',
+                borderBottom: '1px solid #F1F5F9',
+                background: value.toUpperCase() === opt.toUpperCase() ? '#EEF2FF' : '#FFFFFF'
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(opt);
+                if (onSelectOption) onSelectOption(opt);
+                setIsOpen(false);
+              }}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
   medicineToEdit,
   onBack,
   onSuccess
 }) => {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [allExistingMedicines, setAllExistingMedicines] = useState<Medicine[]>([]);
+  const [showNameSuggestions, setShowNameSuggestions] = useState<boolean>(false);
   const [newCatInput, setNewCatInput] = useState<string>('');
   const [showAddCatInput, setShowAddCatInput] = useState<boolean>(false);
 
@@ -95,8 +217,20 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
     }
   };
 
+  const loadExistingMedicines = async () => {
+    try {
+      const res = await apiService.getMedicines();
+      if (res.success && res.medicines) {
+        setAllExistingMedicines(res.medicines);
+      }
+    } catch (err) {
+      console.error('Failed to load existing medicines for suggestions:', err);
+    }
+  };
+
   useEffect(() => {
     loadCategories();
+    loadExistingMedicines();
     if (medicineToEdit) {
       const uPerPkg = medicineToEdit.unitsPerPackage || 1;
       const bQty = medicineToEdit.quantity || 0;
@@ -127,6 +261,114 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
       });
     }
   }, [medicineToEdit]);
+
+  // Location Hierarchy Map (Rack -> Rows, Cols, Bins)
+  const locationHierarchy = useMemo(() => {
+    const rackMap: Record<string, { rows: Set<string>; cols: Set<string>; bins: Set<string> }> = {};
+
+    allExistingMedicines.forEach(med => {
+      const rack = med.rack ? med.rack.trim().toUpperCase() : '';
+      if (!rack) return;
+
+      if (!rackMap[rack]) {
+        rackMap[rack] = { rows: new Set(), cols: new Set(), bins: new Set() };
+      }
+
+      if (med.row) rackMap[rack].rows.add(med.row.trim());
+      if (med.column) rackMap[rack].cols.add(med.column.trim());
+      if (med.shelfBin) rackMap[rack].bins.add(med.shelfBin.trim());
+    });
+
+    return rackMap;
+  }, [allExistingMedicines]);
+
+  const availableRacks = useMemo(() => {
+    return Object.keys(locationHierarchy).sort();
+  }, [locationHierarchy]);
+
+  const availableRowsForRack = useMemo(() => {
+    const currentRack = (formData.rack || '').trim().toUpperCase();
+    if (currentRack && locationHierarchy[currentRack]) {
+      return Array.from(locationHierarchy[currentRack].rows).sort();
+    }
+    const allRows = new Set<string>();
+    allExistingMedicines.forEach(m => { if (m.row) allRows.add(m.row.trim()); });
+    return Array.from(allRows).sort();
+  }, [formData.rack, locationHierarchy, allExistingMedicines]);
+
+  const availableColsForRack = useMemo(() => {
+    const currentRack = (formData.rack || '').trim().toUpperCase();
+    if (currentRack && locationHierarchy[currentRack]) {
+      return Array.from(locationHierarchy[currentRack].cols).sort();
+    }
+    const allCols = new Set<string>();
+    allExistingMedicines.forEach(m => { if (m.column) allCols.add(m.column.trim()); });
+    return Array.from(allCols).sort();
+  }, [formData.rack, locationHierarchy, allExistingMedicines]);
+
+  const availableBinsForRack = useMemo(() => {
+    const currentRack = (formData.rack || '').trim().toUpperCase();
+    if (currentRack && locationHierarchy[currentRack]) {
+      return Array.from(locationHierarchy[currentRack].bins).sort();
+    }
+    const allBins = new Set<string>();
+    allExistingMedicines.forEach(m => { if (m.shelfBin) allBins.add(m.shelfBin.trim()); });
+    return Array.from(allBins).sort();
+  }, [formData.rack, locationHierarchy, allExistingMedicines]);
+
+  // Cascading Rack Selection Handler
+  const handleSelectRack = (selectedRack: string) => {
+    const rackUpper = selectedRack.trim().toUpperCase();
+    const info = locationHierarchy[rackUpper];
+
+    const defaultRow = info && info.rows.size > 0 ? Array.from(info.rows)[0] : '';
+    const defaultCol = info && info.cols.size > 0 ? Array.from(info.cols)[0] : '';
+    const defaultBin = info && info.bins.size > 0 ? Array.from(info.bins)[0] : '';
+
+    setFormData(prev => ({
+      ...prev,
+      rack: selectedRack,
+      row: defaultRow || prev.row,
+      column: defaultCol || prev.column,
+      shelfBin: defaultBin || prev.shelfBin
+    }));
+  };
+
+  // Derived Medicine Commercial Name Suggestions
+  const nameSuggestions = useMemo(() => {
+    if (!formData.name || formData.name.trim().length < 2) return [];
+    const q = formData.name.toLowerCase().trim();
+    return allExistingMedicines.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      (m.genericName && m.genericName.toLowerCase().includes(q))
+    ).slice(0, 6);
+  }, [formData.name, allExistingMedicines]);
+
+  // Handle Auto-Fill from Medicine Suggestion
+  const handleSelectMedicineSuggestion = (med: Medicine) => {
+    // Extract base commercial name (remove strength pattern like "(650mg)")
+    const cleanBaseName = med.name.replace(/\s*\([\d\s\w,.-]+\)/, '').trim();
+
+    setFormData(prev => ({
+      ...prev,
+      name: cleanBaseName || med.name,
+      genericName: med.genericName || prev.genericName,
+      category: med.category || prev.category,
+      manufacturer: med.manufacturer || prev.manufacturer,
+      dosageForm: med.dosageForm || prev.dosageForm,
+      packageType: med.packageType || prev.packageType,
+      unitsPerPackage: med.unitsPerPackage || prev.unitsPerPackage,
+      sellingMode: (med.sellingMode || prev.sellingMode) as SellingMode,
+      looseUnitName: med.looseUnitName || prev.looseUnitName,
+      mrp: med.mrp !== undefined ? med.mrp : prev.mrp,
+      sellingPrice: med.sellingPrice !== undefined ? med.sellingPrice : prev.sellingPrice,
+      rack: med.rack || prev.rack,
+      row: med.row || prev.row,
+      column: med.column || prev.column,
+      shelfBin: med.shelfBin || prev.shelfBin
+    }));
+    setShowNameSuggestions(false);
+  };
 
   const generateBarcode = () => {
     const code = `${Math.floor(8900000000000 + Math.random() * 99999999999)}`;
@@ -267,16 +509,82 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
                 <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>1. Basic Identification</h3>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Medicine Commercial Name *</label>
+              <div className="form-group" style={{ position: 'relative' }}>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Medicine Commercial Name *</span>
+                  {allExistingMedicines.length > 0 && (
+                    <span style={{ fontSize: '11px', color: '#6366F1', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
+                      <Sparkles size={12} /> Auto-suggest active ({allExistingMedicines.length} in DB)
+                    </span>
+                  )}
+                </label>
                 <input
                   type="text"
                   className="form-control"
                   placeholder="e.g. Paracetamol 650mg"
                   value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  onChange={e => {
+                    setFormData({ ...formData, name: e.target.value });
+                    setShowNameSuggestions(true);
+                  }}
+                  onFocus={() => setShowNameSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 200)}
                   required
                 />
+
+                {/* Autocomplete Dropdown List */}
+                {showNameSuggestions && nameSuggestions.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 100,
+                      background: '#FFFFFF',
+                      border: '1px solid #C7D2FE',
+                      borderRadius: '10px',
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+                      marginTop: '4px',
+                      maxHeight: '220px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{ padding: '6px 12px', background: '#EEF2FF', fontSize: '11px', fontWeight: 700, color: '#4338CA', borderBottom: '1px solid #E0E7FF' }}>
+                      ⚡ Click existing medicine to auto-fill common details:
+                    </div>
+                    {nameSuggestions.map((med) => (
+                      <div
+                        key={med.id}
+                        style={{
+                          padding: '10px 14px',
+                          borderBottom: '1px solid #F1F5F9',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          background: '#FFFFFF'
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSelectMedicineSuggestion(med);
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '13px' }}>
+                            {med.name} {med.strength ? `(${med.strength})` : ''}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                            Generic: {med.genericName || 'N/A'} • {med.category}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#2563EB', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #BFDBFE' }}>
+                          Auto-fill
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -568,57 +876,57 @@ export const AddEditMedicine: React.FC<AddEditMedicineProps> = ({
 
             {/* SECTION 5: Physical Pharmacy Storage Location */}
             <div className="table-container" style={{ padding: '20px', background: '#FFFFFF' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
-                <MapPin size={18} color="#7C3AED" />
-                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>5. Physical Storage Location</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MapPin size={18} color="#7C3AED" />
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>5. Physical Storage Location</h3>
+                </div>
+                {availableRacks.length > 0 && (
+                  <span style={{ fontSize: '11px', color: '#7C3AED', fontWeight: 600, background: '#F3E8FF', padding: '2px 8px', borderRadius: '6px' }}>
+                    ⚡ Cascading Location Auto-Fetch ({availableRacks.length} Racks)
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">Rack</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. A"
-                    value={formData.rack}
-                    onChange={e => setFormData({ ...formData, rack: e.target.value })}
-                  />
-                </div>
+                {/* Single Combined Rack Input + Dropdown */}
+                <ComboboxInput
+                  label="Rack"
+                  placeholder="Type rack (e.g. A, B, C, P)..."
+                  value={formData.rack}
+                  options={availableRacks}
+                  onChange={val => setFormData(prev => ({ ...prev, rack: val }))}
+                  onSelectOption={handleSelectRack}
+                />
 
-                <div className="form-group">
-                  <label className="form-label">Row</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. 03"
-                    value={formData.row}
-                    onChange={e => setFormData({ ...formData, row: e.target.value })}
-                  />
-                </div>
+                {/* Single Combined Row Input + Dropdown */}
+                <ComboboxInput
+                  label={`Row ${formData.rack ? `(for Rack ${formData.rack.toUpperCase()})` : ''}`}
+                  placeholder="Type row (e.g. 01, 02, 03)..."
+                  value={formData.row}
+                  options={availableRowsForRack}
+                  onChange={val => setFormData(prev => ({ ...prev, row: val }))}
+                />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">Column</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. 05"
-                    value={formData.column}
-                    onChange={e => setFormData({ ...formData, column: e.target.value })}
-                  />
-                </div>
+                {/* Single Combined Column Input + Dropdown */}
+                <ComboboxInput
+                  label={`Column ${formData.rack ? `(for Rack ${formData.rack.toUpperCase()})` : ''}`}
+                  placeholder="Type column (e.g. 01, 05)..."
+                  value={formData.column}
+                  options={availableColsForRack}
+                  onChange={val => setFormData(prev => ({ ...prev, column: val }))}
+                />
 
-                <div className="form-group">
-                  <label className="form-label">Shelf / Bin</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. B-12"
-                    value={formData.shelfBin}
-                    onChange={e => setFormData({ ...formData, shelfBin: e.target.value })}
-                  />
-                </div>
+                {/* Single Combined Shelf / Bin Input + Dropdown */}
+                <ComboboxInput
+                  label={`Shelf / Bin ${formData.rack ? `(for Rack ${formData.rack.toUpperCase()})` : ''}`}
+                  placeholder="Type bin (e.g. C-1, P-1, B-12)..."
+                  value={formData.shelfBin}
+                  options={availableBinsForRack}
+                  onChange={val => setFormData(prev => ({ ...prev, shelfBin: val }))}
+                />
               </div>
             </div>
 

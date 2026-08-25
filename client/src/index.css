@@ -58,6 +58,26 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+*::-webkit-scrollbar {
+  display: none !important;  /* Chrome, Safari, Opera, Electron */
+  width: 0 !important;
+  height: 0 !important;
+}
+
+html, body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 body {
@@ -541,12 +561,54 @@ body {
   border-bottom: 1px solid var(--border-color);
   transition: background 0.15s ease;
   vertical-align: middle;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.data-table td:last-child,
+.data-table td.actions-cell {
+  overflow: visible !important;
 }
 
 .data-table tr:hover td {
   background-color: #F8FAFC;
+}
+
+/* Horizontal Action Dock Tooltips */
+.icon-action-btn {
+  position: relative;
+  transition: all 0.15s ease;
+  border-radius: 8px;
+}
+
+.icon-action-btn:hover {
+  background-color: #F1F5F9 !important;
+  transform: translateY(-1px);
+}
+
+.icon-action-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  background: #0F172A;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+  z-index: 10000;
+}
+
+.icon-action-btn[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) scale(1);
 }
 
 /* Status Badges */
