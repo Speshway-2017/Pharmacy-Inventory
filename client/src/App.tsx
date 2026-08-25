@@ -9,6 +9,7 @@ import { Medicine } from '../../shared/types';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Inventory } from './pages/Inventory';
+import { MedicineDetails } from './pages/MedicineDetails';
 import { AddEditMedicine } from './pages/AddEditMedicine';
 import { BillingPOS } from './pages/BillingPOS';
 import { BillHistory } from './pages/BillHistory';
@@ -24,6 +25,7 @@ const MainLayout: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
+  const [selectedMedicineDetails, setSelectedMedicineDetails] = useState<Medicine | null>(null);
 
   if (!user) {
     return <Login />;
@@ -34,10 +36,16 @@ const MainLayout: React.FC = () => {
     setActiveTab('add-medicine');
   };
 
+  const handleViewMedicineDetails = (med: Medicine) => {
+    setSelectedMedicineDetails(med);
+    setActiveTab('medicine-details');
+  };
+
   const getPageTitle = (): string => {
     switch (activeTab) {
       case 'dashboard': return 'Dashboard Overview';
       case 'inventory': return 'Medicine Inventory';
+      case 'medicine-details': return selectedMedicineDetails ? `Medicine Details - ${selectedMedicineDetails.name}` : 'Medicine Details Overview';
       case 'add-medicine': return editingMedicine ? 'Edit Medicine Record' : 'Add New Medicine';
       case 'billing': return 'Point of Sale (POS) Billing Counter';
       case 'history': return 'Sales Bills History';
@@ -60,7 +68,22 @@ const MainLayout: React.FC = () => {
         <main className="content-body">
           <ErrorBoundary>
             {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
-            {activeTab === 'inventory' && <Inventory onOpenAddEditPage={handleOpenAddEditMedicine} />}
+            {activeTab === 'inventory' && (
+              <Inventory
+                onOpenAddEditPage={handleOpenAddEditMedicine}
+                onViewMedicineDetails={handleViewMedicineDetails}
+              />
+            )}
+            {activeTab === 'medicine-details' && selectedMedicineDetails && (
+              <MedicineDetails
+                medicine={selectedMedicineDetails}
+                onBack={() => {
+                  setSelectedMedicineDetails(null);
+                  setActiveTab('inventory');
+                }}
+                onEdit={(med) => handleOpenAddEditMedicine(med)}
+              />
+            )}
             {activeTab === 'add-medicine' && (
               <AddEditMedicine
                 medicineToEdit={editingMedicine}

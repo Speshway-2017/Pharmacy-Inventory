@@ -20,7 +20,8 @@ export type ActiveTab =
   | 'expiry-risk'
   | 'expiry'
   | 'settings'
-  | 'add-medicine';
+  | 'add-medicine'
+  | 'medicine-details';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -52,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           const Icon = item.icon;
           const isActive =
             activeTab === item.id ||
-            (item.id === 'inventory' && activeTab === 'add-medicine') ||
+            (item.id === 'inventory' && (activeTab === 'add-medicine' || activeTab === 'medicine-details')) ||
             (item.id === 'reports' && (activeTab === 'stock-valuation' || activeTab === 'expiry-risk'));
           return (
             <div

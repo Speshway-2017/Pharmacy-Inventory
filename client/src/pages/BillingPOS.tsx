@@ -14,7 +14,9 @@ import {
   CreditCard,
   QrCode,
   Banknote,
-  MapPin
+  MapPin,
+  Printer,
+  FileText
 } from 'lucide-react';
 
 export const BillingPOS: React.FC = () => {
@@ -28,6 +30,7 @@ export const BillingPOS: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [completedBill, setCompletedBill] = useState<Bill | null>(null);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -231,6 +234,7 @@ export const BillingPOS: React.FC = () => {
 
       if (res.success && res.bill) {
         setCompletedBill(res.bill);
+        setShowPrintModal(false);
         setCart([]);
         setDiscountAmount(0);
         setDiscountPercentage(0);
@@ -242,6 +246,189 @@ export const BillingPOS: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // If a sale was just completed, show the Sale Success Screen
+  if (completedBill) {
+    return (
+      <div style={{ maxWidth: '720px', margin: '20px auto', padding: '0 16px' }}>
+        <div
+          style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            border: '1px solid #CBD5E1',
+            padding: '36px 32px',
+            boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.05)',
+            textAlign: 'center'
+          }}
+        >
+          {/* Animated Success Icon */}
+          <div
+            style={{
+              width: '76px',
+              height: '76px',
+              background: '#ECFDF5',
+              borderRadius: '50%',
+              color: '#059669',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 18px auto',
+              border: '4px solid #D1FAE5',
+              boxShadow: '0 0 20px rgba(16, 185, 129, 0.2)'
+            }}
+          >
+            <CheckCircle2 size={42} />
+          </div>
+
+          <span
+            style={{
+              display: 'inline-block',
+              background: '#D1FAE5',
+              color: '#065F46',
+              fontSize: '12px',
+              fontWeight: 700,
+              padding: '4px 14px',
+              borderRadius: '20px',
+              marginBottom: '10px'
+            }}
+          >
+            ✓ SALE COMPLETED SUCCESSFULLY
+          </span>
+
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', margin: '0 0 6px 0', letterSpacing: '-0.3px' }}>
+            Payment Received
+          </h2>
+          <p style={{ color: '#64748B', fontSize: '14px', margin: '0 0 26px 0' }}>
+            Inventory stock deducted & sale logged. Issue a bill if requested by the customer.
+          </p>
+
+          {/* Invoice Summary Card */}
+          <div
+            style={{
+              background: '#F8FAFC',
+              borderRadius: '12px',
+              border: '1px solid #E2E8F0',
+              padding: '20px',
+              textAlign: 'left',
+              marginBottom: '28px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E2E8F0', paddingBottom: '14px', marginBottom: '14px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                  Invoice Number
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: '#0F766E', marginTop: '2px' }}>
+                  {completedBill.invoiceNumber}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                  Total Paid
+                </div>
+                <div style={{ fontSize: '22px', fontWeight: 900, color: '#0F766E', marginTop: '2px' }}>
+                  ₹{(completedBill.totalAmount || 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px', fontSize: '13px', marginBottom: '16px' }}>
+              <div>
+                <span style={{ color: '#64748B', fontSize: '11px', display: 'block', fontWeight: 600 }}>Payment Method</span>
+                <span className="badge badge-in-stock" style={{ marginTop: '4px', display: 'inline-block', fontSize: '11px', fontWeight: 700 }}>
+                  {completedBill.paymentMethod}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#64748B', fontSize: '11px', display: 'block', fontWeight: 600 }}>Date & Time</span>
+                <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '12px' }}>
+                  {completedBill.date} ({completedBill.time})
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#64748B', fontSize: '11px', display: 'block', fontWeight: 600 }}>Line Items</span>
+                <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '12px' }}>
+                  {completedBill.items.length} item(s)
+                </span>
+              </div>
+            </div>
+
+            {/* Itemized List */}
+            <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
+                Purchased Items:
+              </div>
+              <div style={{ maxHeight: '160px', overflowY: 'auto', paddingRight: '4px' }}>
+                {completedBill.items.map((item, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '12px',
+                      color: '#334155',
+                      padding: '5px 0',
+                      borderBottom: idx < completedBill.items.length - 1 ? '1px solid #F1F5F9' : 'none'
+                    }}
+                  >
+                    <span>
+                      <strong style={{ color: '#0F172A' }}>{item.name}</strong> × {item.quantity} {item.unitType === 'LOOSE' ? (item.looseUnitName || 'Unit') : 'Package'}
+                    </span>
+                    <span style={{ fontWeight: 700, color: '#0F766E' }}>
+                      ₹{((item.unitPrice || 0) * (item.quantity || 1)).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+            <button
+              className="btn btn-primary btn-lg"
+              style={{
+                background: '#0F766E',
+                borderColor: '#0F766E',
+                padding: '12px 26px',
+                fontSize: '15px',
+                fontWeight: 700,
+                boxShadow: '0 4px 12px rgba(15, 118, 110, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onClick={() => setShowPrintModal(true)}
+            >
+              <Printer size={18} />
+              <span>Issue Bill / Print Receipt</span>
+            </button>
+
+            <button
+              className="btn btn-secondary btn-lg"
+              style={{ padding: '12px 24px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+              onClick={() => {
+                setCompletedBill(null);
+                setShowPrintModal(false);
+              }}
+            >
+              <Plus size={18} />
+              <span>Start New Sale</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Modal for Printing if customer requests bill */}
+        {showPrintModal && (
+          <PrintInvoiceModal
+            bill={completedBill}
+            onClose={() => setShowPrintModal(false)}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
@@ -561,14 +748,6 @@ export const BillingPOS: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {/* Completed Bill Print Modal */}
-      {completedBill && (
-        <PrintInvoiceModal
-          bill={completedBill}
-          onClose={() => setCompletedBill(null)}
-        />
-      )}
     </div>
   );
 };

@@ -13,12 +13,8 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
     if (getIsDBConnected()) {
       medicines = await Medicine.find().lean();
       bills = await Bill.find().sort({ createdAt: -1 }).lean();
-    }
-
-    if (!medicines || medicines.length === 0) {
+    } else {
       medicines = LocalStore.getMedicines();
-    }
-    if (!bills || bills.length === 0) {
       bills = LocalStore.getBills();
     }
 
@@ -87,9 +83,7 @@ export const getSalesReport = async (req: Request, res: Response) => {
         query.date = { $gte: startDate, $lte: endDate };
       }
       bills = await Bill.find(query).sort({ createdAt: -1 }).lean();
-    }
-
-    if (!bills || bills.length === 0) {
+    } else {
       bills = LocalStore.getBills();
       if (startDate && endDate) {
         bills = bills.filter((b: any) => b.date >= (startDate as string) && b.date <= (endDate as string));
@@ -128,8 +122,7 @@ export const getStockReport = async (req: Request, res: Response) => {
     let medicines: any[] = [];
     if (getIsDBConnected()) {
       medicines = await Medicine.find().sort({ name: 1 }).lean();
-    }
-    if (!medicines || medicines.length === 0) {
+    } else {
       medicines = LocalStore.getMedicines();
     }
 
@@ -159,8 +152,7 @@ export const getExpiryReport = async (req: Request, res: Response) => {
     let medicines: any[] = [];
     if (getIsDBConnected()) {
       medicines = await Medicine.find().sort({ name: 1 }).lean();
-    }
-    if (!medicines || medicines.length === 0) {
+    } else {
       medicines = LocalStore.getMedicines();
     }
 

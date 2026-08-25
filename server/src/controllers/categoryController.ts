@@ -9,8 +9,8 @@ export const getCategories = async (req: Request, res: Response) => {
     let categories: any[] = [];
     if (getIsDBConnected()) {
       categories = await Category.find().sort({ name: 1 }).lean();
-    }
-    if (!categories.length) {
+      LocalStore.saveCategories(categories);
+    } else {
       categories = LocalStore.getCategories();
     }
     return res.json({ success: true, count: categories.length, categories });
