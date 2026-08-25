@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Medicine, MedicineStatus, Category } from '../../../shared/types';
 import { StockAdjustModal } from '../components/StockAdjustModal';
 import { AddStockModal } from '../components/AddStockModal';
+import GooeyPopover from '../components/GooeyPopover';
+import { PhysicalStorageMap } from '../components/PhysicalStorageMap';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { apiService } from '../services/api';
 import {
   Search,
@@ -20,7 +23,9 @@ import {
   PlusCircle,
   Sliders,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MoreVertical,
+  Table
 } from 'lucide-react';
 
 interface InventoryProps {
@@ -83,6 +88,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [selectedMedicineForAddStock, setSelectedMedicineForAddStock] = useState<Medicine | null>(null);
   const [selectedMedicineForAdjust, setSelectedMedicineForAdjust] = useState<Medicine | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -109,7 +115,21 @@ export const Inventory: React.FC<InventoryProps> = ({
     if (!propMedicines) {
       loadData();
     }
-  }, [propSearchTerm, propSelectedCategory, propSelectedDosageForm, propSelectedStatus]);
+    const handleGlobalClick = () => setOpenMenuId(null);
+    window.addEventListener('click', handleGlobalClick);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+    };
+  }, [
+    propSearchTerm,
+    propSelectedCategory,
+    propSelectedDosageForm,
+    propSelectedStatus,
+    internalSearchTerm,
+    internalSelectedCategory,
+    internalSelectedDosageForm,
+    internalSelectedStatus
+  ]);
 
   const handleRefresh = () => {
     if (propFetchMedicines) {
@@ -129,6 +149,32 @@ export const Inventory: React.FC<InventoryProps> = ({
   const setSelectedDosageForm = propSetSelectedDosageForm || setInternalSelectedDosageForm;
   const selectedStatus = propSelectedStatus !== undefined ? propSelectedStatus : internalSelectedStatus;
   const setSelectedStatus = propSetSelectedStatus || setInternalSelectedStatus;
+
+  // Instant Live Dynamic Filter
+  const filteredMedicines = useMemo(() => {
+    return medicines.filter((med) => {
+      const term = searchTerm.toLowerCase().trim();
+      const matchSearch = !term || [
+        med.name,
+        med.code,
+        med.genericName,
+        med.strength,
+        med.barcode,
+        med.category,
+        med.rack,
+        med.row,
+        med.column,
+        med.shelfBin,
+        med.batchNumber
+      ].some(val => val && val.toLowerCase().includes(term));
+
+      const matchCategory = !selectedCategory || med.category.toLowerCase() === selectedCategory.toLowerCase();
+      const matchDosageForm = !selectedDosageForm || med.dosageForm?.toLowerCase() === selectedDosageForm.toLowerCase();
+      const matchStatus = !selectedStatus || med.status === selectedStatus;
+
+      return matchSearch && matchCategory && matchDosageForm && matchStatus;
+    });
+  }, [medicines, searchTerm, selectedCategory, selectedDosageForm, selectedStatus]);
 
   const handleDeactivate = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to deactivate ${name}?`)) {
@@ -184,16 +230,16 @@ export const Inventory: React.FC<InventoryProps> = ({
     if (pkgQty > 0 && looseQty > 0) {
       return (
         <div>
-          <strong style={{ color: '#0F172A' }}>{pkgQty} {pkgName}s</strong>
+          <strong style={{ color: '#0F766E' }}>{pkgQty} {pkgName}s</strong>
           <span style={{ fontSize: '11px', color: '#0F766E', fontWeight: 600, marginLeft: '4px' }}>
             + {looseQty} {looseName}s
           </span>
         </div>
       );
     } else if (pkgQty > 0) {
-      return <strong style={{ color: '#0F172A' }}>{pkgQty} {pkgName}s</strong>;
+      return <strong style={{ color: '#0F766E' }}>{pkgQty} {pkgName}s</strong>;
     } else {
-      return <strong style={{ color: '#0F172A' }}>{looseQty} {looseName}s</strong>;
+      return <strong style={{ color: '#0F766E' }}>{looseQty} {looseName}s</strong>;
     }
   };
 
@@ -203,26 +249,42 @@ export const Inventory: React.FC<InventoryProps> = ({
     if (med.row) locs.push(`R-${med.row}`);
     if (med.column) locs.push(`C-${med.column}`);
     if (med.shelfBin) locs.push(med.shelfBin);
-    if (!locs.length) return <span style={{ color: '#94A3B8', fontSize: '11px' }}>Unassigned</span>;
+    if (!locs.length) return <span style={{ color: '#94A3B8', fontSize: '11.5px', fontStyle: 'italic' }}>Unassigned</span>;
     return (
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 600, background: '#F3E8FF', padding: '4px 10px', borderRadius: '8px', color: '#7E22CE', whiteSpace: 'nowrap' }}>
-        <MapPin size={12} color="#9333EA" />
-        <span>{locs.join(' → ')}</span>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          fontSize: '11px',
+          fontWeight: 600,
+          background: '#EEF2FF',
+          padding: '4px 8px',
+          borderRadius: '6px',
+          color: '#4F46E5',
+          border: '1px solid #C7D2FE',
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          maxWidth: '100%'
+        }}
+      >
+        <MapPin size={12} color="#6366F1" style={{ flexShrink: 0 }} />
+        <span>{locs.join(' • ')}</span>
       </div>
     );
   };
 
   // Pagination Math
-  const totalItems = medicines.length;
+  const totalItems = filteredMedicines.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
-  const paginatedMedicines = medicines.slice(startIndex, endIndex);
+  const paginatedMedicines = filteredMedicines.slice(startIndex, endIndex);
 
   return (
     <div>
       {/* Header Tools */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.3px' }}>
             Medicine Inventory Directory
@@ -231,6 +293,9 @@ export const Inventory: React.FC<InventoryProps> = ({
             Managing <strong style={{ color: 'var(--text-primary)' }}>{medicines.length}</strong> active medicines in database
           </div>
         </div>
+
+        {/* View Toggle Tabs (Segmented Control) */}
+        <SegmentedToggle value={viewMode} onChange={setViewMode} />
 
         <div style={{ display: 'flex', gap: '10px' }}>
           <button className="btn btn-secondary" onClick={handleRefresh} style={{ borderRadius: '10px', gap: '6px' }}>
@@ -250,7 +315,11 @@ export const Inventory: React.FC<InventoryProps> = ({
         </div>
       </div>
 
-      {/* Floating Filter Bar Card */}
+      {viewMode === 'map' ? (
+        <PhysicalStorageMap medicines={medicines} onViewMedicineDetails={onViewMedicineDetails} />
+      ) : (
+        <>
+          {/* Floating Filter Bar Card */}
       <div
         style={{
           background: '#FFFFFF',
@@ -348,13 +417,13 @@ export const Inventory: React.FC<InventoryProps> = ({
         ) : (
           <table className="data-table" style={{ width: '100%', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '27%' }} />
+              <col style={{ width: '26%' }} />
               <col style={{ width: '16%' }} />
-              <col style={{ width: '15%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '11%' }} />
               <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '12%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -372,18 +441,11 @@ export const Inventory: React.FC<InventoryProps> = ({
                 const openUpwards = paginatedMedicines.length > 3 && rowIndex >= paginatedMedicines.length - 2;
 
                 return (
-                  <tr
-                    key={med.id}
-                    onClick={() => {
-                      if (onViewMedicineDetails) onViewMedicineDetails(med);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    title="Click row to view full medicine details"
-                  >
+                  <tr key={med.id}>
                       {/* Code & Name */}
                       <td style={{ padding: '14px 18px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '3px 8px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid #BFDBFE', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '3px 8px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid #BFDBFE', whiteSpace: 'nowrap', textDecoration: 'none' }}>
                             {med.code || `MED-${med.id.slice(-6).toUpperCase()}`}
                           </span>
                           <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '14px', whiteSpace: 'nowrap' }}>
@@ -396,10 +458,11 @@ export const Inventory: React.FC<InventoryProps> = ({
                       </td>
 
                       {/* Category & Batch */}
-                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 600, color: '#334155', fontSize: '13px' }}>{med.category}</div>
-                        <div style={{ fontSize: '11px', color: '#64748B', fontFamily: 'monospace', marginTop: '2px' }}>
-                          Batch: {med.batchNumber} | Exp: {med.expiryDate}
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: 600, color: '#334155', fontSize: '13px', marginBottom: '2px' }}>{med.category}</div>
+                        <div style={{ fontSize: '11px', color: '#64748B', lineHeight: 1.35 }}>
+                          <div>Batch: <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#475569' }}>{med.batchNumber}</span></div>
+                          <div>Exp: <span style={{ color: '#475569' }}>{med.expiryDate}</span></div>
                         </div>
                       </td>
 
@@ -432,170 +495,138 @@ export const Inventory: React.FC<InventoryProps> = ({
                       </td>
 
                       {/* Actions */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', position: 'relative', whiteSpace: 'nowrap' }}>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px', fontWeight: 600, borderRadius: '6px', background: '#F1F5F9', border: '1px solid #CBD5E1' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenMenuId(openMenuId === med.id ? null : med.id);
-                          }}
+                      <td className="actions-cell" style={{ padding: '10px 14px', textAlign: 'right', position: 'relative', whiteSpace: 'nowrap', overflow: 'visible' }}>
+                        <GooeyPopover
+                          contentWidth={isAdmin ? 215 : 175}
+                          popoverBg="#0F172A"
+                          side={openUpwards ? 'top' : 'bottom'}
+                          sideOffset={4}
+                          trigger={<MoreVertical size={16} color="#2563EB" />}
                         >
-                          <span>Actions</span>
-                          <ChevronDown size={12} />
-                        </button>
-
-                        {openMenuId === med.id && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              right: '8px',
-                              ...(openUpwards ? { bottom: '38px' } : { top: '38px' }),
-                              background: '#FFFFFF',
-                              border: '1px solid #CBD5E1',
-                              borderRadius: '10px',
-                              boxShadow: '0 14px 30px -4px rgba(0,0,0,0.18), 0 4px 10px -2px rgba(0,0,0,0.08)',
-                              zIndex: 9999,
-                              minWidth: '170px',
-                              padding: '6px 0',
-                              textAlign: 'left'
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px' }}>
                             <button
                               type="button"
+                              className="icon-action-btn"
+                              data-tooltip="View Full Details"
                               style={{
-                                width: '100%',
-                                padding: '8px 14px',
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
                                 border: 'none',
-                                background: 'none',
-                                textAlign: 'left',
-                                fontSize: '12.5px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
+                                background: 'transparent',
+                                color: '#60A5FA',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                color: 'var(--primary-blue)'
+                                justifyContent: 'center',
+                                cursor: 'pointer'
                               }}
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (onViewMedicineDetails) onViewMedicineDetails(med);
-                                setOpenMenuId(null);
                               }}
                             >
-                              <Eye size={14} />
-                              <span>View Full Details</span>
+                              <Eye size={16} color="#60A5FA" />
                             </button>
 
                             <button
                               type="button"
+                              className="icon-action-btn"
+                              data-tooltip="Add Stock Shipment"
                               style={{
-                                width: '100%',
-                                padding: '8px 14px',
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
                                 border: 'none',
-                                background: 'none',
-                                textAlign: 'left',
-                                fontSize: '12.5px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
+                                background: 'transparent',
+                                color: '#34D399',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                color: '#0F766E',
-                                borderTop: '1px solid #F1F5F9',
-                                marginTop: '2px',
-                                paddingTop: '8px'
+                                justifyContent: 'center',
+                                cursor: 'pointer'
                               }}
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setSelectedMedicineForAddStock(med);
-                                setOpenMenuId(null);
                               }}
                             >
-                              <PlusCircle size={14} />
-                              <span>Add Stock Shipment</span>
+                              <PlusCircle size={16} color="#34D399" />
                             </button>
 
                             <button
                               type="button"
+                              className="icon-action-btn"
+                              data-tooltip="Adjust Stock"
                               style={{
-                                width: '100%',
-                                padding: '8px 14px',
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
                                 border: 'none',
-                                background: 'none',
-                                textAlign: 'left',
-                                fontSize: '12.5px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
+                                background: 'transparent',
+                                color: '#CBD5E1',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                color: '#334155'
+                                justifyContent: 'center',
+                                cursor: 'pointer'
                               }}
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setSelectedMedicineForAdjust(med);
-                                setOpenMenuId(null);
                               }}
                             >
-                              <Sliders size={14} />
-                              <span>Adjust Stock</span>
+                              <Sliders size={16} color="#CBD5E1" />
                             </button>
 
                             <button
                               type="button"
+                              className="icon-action-btn"
+                              data-tooltip="Edit Details"
                               style={{
-                                width: '100%',
-                                padding: '8px 14px',
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
                                 border: 'none',
-                                background: 'none',
-                                textAlign: 'left',
-                                fontSize: '12.5px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
+                                background: 'transparent',
+                                color: '#FBBF24',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                color: '#334155'
+                                justifyContent: 'center',
+                                cursor: 'pointer'
                               }}
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (onOpenAddEditPage) onOpenAddEditPage(med);
-                                setOpenMenuId(null);
                               }}
                             >
-                              <Edit2 size={14} />
-                              <span>Edit Details</span>
+                              <Edit2 size={16} color="#FBBF24" />
                             </button>
 
                             {isAdmin && (
                               <button
                                 type="button"
+                                className="icon-action-btn"
+                                data-tooltip="Deactivate"
                                 style={{
-                                  width: '100%',
-                                  padding: '8px 14px',
+                                  width: '34px',
+                                  height: '34px',
+                                  borderRadius: '8px',
                                   border: 'none',
-                                  background: 'none',
-                                  textAlign: 'left',
-                                  fontSize: '12.5px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  display: 'flex',
+                                  background: 'transparent',
+                                  color: '#F87171',
+                                  display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '8px',
-                                  color: '#DC2626',
-                                  borderTop: '1px solid #F1F5F9',
-                                  marginTop: '4px',
-                                  paddingTop: '8px'
+                                  justifyContent: 'center',
+                                  cursor: 'pointer'
                                 }}
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleDeactivate(med.id, med.name);
-                                  setOpenMenuId(null);
                                 }}
                               >
-                                <Trash2 size={14} />
-                                <span>Deactivate</span>
+                                <Trash2 size={16} color="#F87171" />
                               </button>
                             )}
                           </div>
-                        )}
+                        </GooeyPopover>
                       </td>
                     </tr>
                   );
@@ -696,6 +727,8 @@ export const Inventory: React.FC<InventoryProps> = ({
           </div>
         )}
       </div>
+    </>
+  )}
 
       {/* Add Stock Modal */}
       {selectedMedicineForAddStock && (

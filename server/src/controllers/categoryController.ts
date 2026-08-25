@@ -46,6 +46,15 @@ export const addCategory = async (req: Request, res: Response) => {
 
     if (getIsDBConnected()) {
       await Category.create(newCategory);
+    } else {
+      LocalStore.addSyncTransaction({
+        id: `tx-${Date.now()}`,
+        transactionId: `OFFLINE-CREATE_CATEGORY-${uuidv4()}`,
+        operation: 'CREATE_CATEGORY',
+        payload: newCategory,
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      });
     }
 
     return res.status(201).json({ success: true, message: 'Category added successfully.', category: newCategory });

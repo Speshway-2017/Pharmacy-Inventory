@@ -111,23 +111,47 @@ export const MedicineDetails: React.FC<MedicineDetailsProps> = ({
   return (
     <div style={{ paddingBottom: '40px' }}>
       {/* Header Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <button className="btn btn-secondary" onClick={onBack} style={{ padding: '8px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={onBack}
+            style={{
+              padding: '8px 16px',
+              fontWeight: 600,
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              border: '1px solid #CBD5E1',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+          >
             <ArrowLeft size={16} />
             <span>Back to Inventory</span>
           </button>
 
+          <div style={{ height: '32px', width: '1px', background: '#CBD5E1', flexShrink: 0 }} />
+
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2 className="page-title" style={{ margin: 0, fontSize: '22px' }}>
+              <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.3px' }}>
                 {medicine.name} {medicine.strength ? `(${medicine.strength})` : ''}
               </h2>
               {renderStatusBadge(medicine.status)}
             </div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Code: <strong style={{ fontFamily: 'monospace', color: 'var(--primary-blue)' }}>{medicine.code || `MED-${medicine.id.slice(-6).toUpperCase()}`}</strong>
-              {medicine.manufacturer && ` • Manufacturer: ${medicine.manufacturer}`}
+            <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>
+                Code: <strong style={{ fontFamily: 'monospace', color: '#2563EB', background: '#EFF6FF', padding: '2px 8px', borderRadius: '4px', border: '1px solid #BFDBFE', textDecoration: 'none' }}>{medicine.code || `MED-${medicine.id.slice(-6).toUpperCase()}`}</strong>
+              </span>
+              {medicine.manufacturer && (
+                <>
+                  <span style={{ color: '#CBD5E1' }}>•</span>
+                  <span>Manufacturer: <strong style={{ color: '#334155' }}>{medicine.manufacturer}</strong></span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -137,7 +161,7 @@ export const MedicineDetails: React.FC<MedicineDetailsProps> = ({
           <button
             className="btn btn-secondary"
             onClick={() => setShowAddStockModal(true)}
-            style={{ color: '#0F766E' }}
+            style={{ color: '#0F766E', borderColor: '#99F6E4', background: '#F0FDF4' }}
           >
             <PlusCircle size={15} />
             <span>Add Stock</span>

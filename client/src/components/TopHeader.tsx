@@ -43,7 +43,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ title }) => {
         </div>
 
         {/* Sync Trigger Button */}
-        {pendingSyncCount > 0 && isOnline && (
+        {pendingSyncCount > 0 && (
           <button
             className="btn btn-secondary btn-sm"
             onClick={triggerSync}

@@ -140,6 +140,11 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
+// Set public DNS servers for Electron main process to ensure DNS lookup reliability on Windows
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (dnsErr) {}
+
 // IPC Handler: Connectivity Check
 ipcMain.handle('check-internet', async () => {
   return new Promise((resolve) => {
@@ -148,6 +153,18 @@ ipcMain.handle('check-internet', async () => {
     });
   });
 });
+
+let lastConnectivityState = null;
+setInterval(async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  dns.lookup('google.com', (err) => {
+    const currentStatus = !err;
+    if (lastConnectivityState !== currentStatus) {
+      lastConnectivityState = currentStatus;
+      mainWindow.webContents.send('connectivity-status', currentStatus);
+    }
+  });
+}, 10000);
 
 // IPC Handlers: Controlled & Sanitized Local JSON Operations
 const ALLOWED_JSON_FILES = new Set(['medicines.json', 'bills.json', 'settings.json', 'sync-queue.json', 'users.json', 'categories.json', 'session.json']);

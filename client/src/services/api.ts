@@ -491,6 +491,12 @@ export const apiService = {
       } catch (e) {
         res = await api.post('/sync/offline', { queue: pending });
       }
+
+      if (res?.data?.success) {
+        const remainingQueue = queue.filter(q => q.status !== 'PENDING');
+        await OfflineEngine.writeJson('sync-queue.json', 'pharmacy_local_sync_queue', remainingQueue);
+      }
+
       return res.data;
     } catch (err: any) {
       throw new Error(err.response?.data?.message || 'Sync failed.');
@@ -500,6 +506,13 @@ export const apiService = {
   async getSyncStatus() {
     try {
       const res = await api.get('/sync/status');
+      if (res.data?.success && res.data.isOnline && res.data.pendingCount === 0) {
+        const queue = await OfflineEngine.readJson<any[]>('sync-queue.json', 'pharmacy_local_sync_queue', []);
+        if (queue.some(q => q.status === 'PENDING')) {
+          const remainingQueue = queue.filter(q => q.status !== 'PENDING');
+          await OfflineEngine.writeJson('sync-queue.json', 'pharmacy_local_sync_queue', remainingQueue);
+        }
+      }
       return res.data;
     } catch (err: any) {
       const pendingCount = await OfflineEngine.getPendingSyncCount();
