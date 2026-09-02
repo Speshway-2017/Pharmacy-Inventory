@@ -24,25 +24,22 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkConnectivityAndSyncQueue = async () => {
     try {
       const internetAccess = await OfflineEngine.isOnline();
-      if (!internetAccess) {
-        setIsOnline(false);
-        const count = await OfflineEngine.getPendingSyncCount();
-        setPendingSyncCount(count);
-        return;
-      }
 
       const statusRes = await apiService.getSyncStatus();
-      const dbOnline = !!statusRes?.isOnline;
+      const dbOnline = statusRes?.success ? statusRes.isOnline : false;
       const count = statusRes?.pendingCount !== undefined ? statusRes.pendingCount : await OfflineEngine.getPendingSyncCount();
 
-      setIsOnline(dbOnline);
+      const currentlyOnline = internetAccess && (statusRes?.success ? (dbOnline ?? true) : false);
+
+      setIsOnline(currentlyOnline);
       setPendingSyncCount(count);
 
-      if (dbOnline && count > 0 && !isSyncing) {
+      if (currentlyOnline && count > 0 && !isSyncing) {
         triggerSyncHandler();
       }
     } catch (err) {
-      setIsOnline(false);
+      const internetAccess = await OfflineEngine.isOnline().catch(() => navigator.onLine);
+      setIsOnline(internetAccess);
       const count = await OfflineEngine.getPendingSyncCount();
       setPendingSyncCount(count);
     }

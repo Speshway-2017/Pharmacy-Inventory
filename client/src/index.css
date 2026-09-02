@@ -108,20 +108,34 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar.minimized {
+  width: 68px;
+}
+
+.sidebar.expanded {
+  width: 240px;
 }
 
 .sidebar-header {
-  padding: 22px 20px;
+  padding: 16px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 64px;
 }
 
 .sidebar-logo-icon {
   width: 36px;
   height: 36px;
+  min-width: 36px;
   background: var(--primary-blue);
   border-radius: 10px;
   display: flex;
@@ -131,14 +145,15 @@ body {
 }
 
 .sidebar-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.3px;
   color: #FFFFFF;
+  white-space: nowrap;
 }
 
 .sidebar-nav {
-  padding: 16px 12px;
+  padding: 16px 10px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -149,7 +164,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 14px;
+  padding: 11px 12px;
   color: var(--dark-sidebar-text);
   text-decoration: none;
   border-radius: 10px;
@@ -157,6 +172,12 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.sidebar.minimized .nav-item {
+  padding: 11px;
+  justify-content: center;
 }
 
 .nav-item-left {
@@ -165,10 +186,14 @@ body {
   gap: 12px;
 }
 
+.sidebar.minimized .nav-item-left {
+  justify-content: center;
+  gap: 0;
+}
+
 .nav-item:hover {
   background: var(--dark-sidebar-hover);
   color: #FFFFFF;
-  transform: translateX(2px);
 }
 
 .nav-item.active {
@@ -183,10 +208,16 @@ body {
 }
 
 .sidebar-footer {
-  padding: 16px;
+  padding: 14px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 12px;
   color: var(--dark-sidebar-text);
+  white-space: nowrap;
+}
+
+.sidebar.minimized .sidebar-footer {
+  padding: 14px 6px;
+  text-align: center;
 }
 
 /* Main Content Area */
@@ -570,6 +601,43 @@ body {
 
 .data-table tr:hover td {
   background-color: #F8FAFC;
+}
+
+/* Interactive Table Row & List-Style Action Menu */
+.inventory-table-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.inventory-table-row:hover td {
+  background-color: #EFF6FF !important;
+}
+
+.list-action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #F8FAFC;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.list-action-item:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #FFFFFF !important;
+}
+
+.list-action-item.danger:hover {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  color: #FCA5A5 !important;
 }
 
 /* Horizontal Action Dock Tooltips */
