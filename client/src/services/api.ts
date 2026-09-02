@@ -242,14 +242,15 @@ export const apiService = {
           throw new Error(`Cannot sell expired medicine '${med.name}'.`);
         }
 
-        const unitType = item.unitType || 'PACKAGE';
         const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
+        const pkgQty = Number(item.packageQuantity) || (item.unitType === 'PACKAGE' ? Number(item.quantity) || 0 : 0);
+        const looseQty = Number(item.looseQuantity) || (item.unitType === 'LOOSE' ? Number(item.quantity) || 0 : 0);
 
-        if (unitType === 'LOOSE' && med.sellingMode === 'FULL_PACKAGE_ONLY') {
+        if (looseQty > 0 && med.sellingMode === 'FULL_PACKAGE_ONLY') {
           throw new Error(`'${med.name}' is configured for FULL PACKAGE sales only.`);
         }
 
-        const baseUnitsRequired = unitType === 'PACKAGE' ? (item.quantity * unitsPerPkg) : item.quantity;
+        const baseUnitsRequired = (pkgQty * unitsPerPkg) + looseQty;
         if (med.quantity < baseUnitsRequired) {
           throw new Error(`Insufficient stock for '${med.name}'. Available: ${med.quantity} base units, Requested: ${baseUnitsRequired}.`);
         }
@@ -260,12 +261,15 @@ export const apiService = {
       const processedItems = billPayload.items.map(item => {
         const idx = medicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
         const med = medicines[idx];
-        const unitType = item.unitType || 'PACKAGE';
         const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
-        const unitPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
-        const quantity = Math.max(1, Number(item.quantity) || 1);
-        const totalPrice = Math.round(unitPrice * quantity * 100) / 100;
-        const baseUnitsDeducted = unitType === 'PACKAGE' ? (quantity * unitsPerPkg) : quantity;
+        const pkgPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
+        const loosePrice = Math.round((pkgPrice / unitsPerPkg) * 100) / 100;
+
+        const pkgQty = Number(item.packageQuantity) || (item.unitType === 'PACKAGE' ? Number(item.quantity) || 0 : 0);
+        const looseQty = Number(item.looseQuantity) || (item.unitType === 'LOOSE' ? Number(item.quantity) || 0 : 0);
+
+        const totalPrice = Math.round(((pkgPrice * pkgQty) + (loosePrice * looseQty)) * 100) / 100;
+        const baseUnitsDeducted = (pkgQty * unitsPerPkg) + looseQty;
 
         medicines[idx].quantity -= baseUnitsDeducted;
         subtotal += totalPrice;
@@ -277,11 +281,14 @@ export const apiService = {
           genericName: med.genericName || med.name,
           batchNumber: med.batchNumber,
           expiryDate: med.expiryDate,
-          unitPrice,
-          quantity,
-          unitType,
+          unitPrice: pkgPrice,
+          packageQuantity: pkgQty,
+          looseQuantity: looseQty,
+          quantity: Number(item.quantity) || (pkgQty + looseQty) || 1,
+          unitType: (pkgQty > 0 && looseQty > 0 ? 'BOTH' : (pkgQty > 0 ? 'PACKAGE' : 'LOOSE')) as 'PACKAGE' | 'LOOSE' | 'BOTH',
           unitsPerPackage: unitsPerPkg,
           looseUnitName: med.looseUnitName || 'Tablet',
+          packageType: med.packageType || 'Strip',
           baseUnitsDeducted,
           totalPrice
         };

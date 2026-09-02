@@ -56,6 +56,10 @@ export const connectDB = async (): Promise<boolean> => {
 
   try {
     isConnecting = true;
+    try {
+      dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+    } catch (dnsErr: any) {}
+
     await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
     });

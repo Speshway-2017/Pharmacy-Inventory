@@ -142,28 +142,50 @@ ipcMain.handle('get-printers', async () => {
 
 // Set public DNS servers for Electron main process to ensure DNS lookup reliability on Windows
 try {
-  dns.setServers(['8.8.8.8', '1.1.1.1']);
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 } catch (dnsErr) {}
+
+async function checkInternetConnectivity() {
+  return new Promise((resolve) => {
+    try {
+      dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+    } catch (e) {}
+
+    // 1. Try dns.resolve4 with public DNS configured
+    dns.resolve4('google.com', (err1) => {
+      if (!err1) return resolve(true);
+      dns.resolve4('cloudflare.com', (err2) => {
+        if (!err2) return resolve(true);
+        // 2. Fallback to dns.lookup
+        dns.lookup('google.com', (err3) => {
+          if (!err3) return resolve(true);
+          // 3. Fallback to HTTP ping check
+          const http = require('http');
+          const req = http.get('http://1.1.1.1', { timeout: 3000 }, (res) => {
+            req.destroy();
+            resolve(true);
+          });
+          req.on('error', () => resolve(false));
+          req.on('timeout', () => { req.destroy(); resolve(false); });
+        });
+      });
+    });
+  });
+}
 
 // IPC Handler: Connectivity Check
 ipcMain.handle('check-internet', async () => {
-  return new Promise((resolve) => {
-    dns.lookup('google.com', (err) => {
-      resolve(!err);
-    });
-  });
+  return await checkInternetConnectivity();
 });
 
 let lastConnectivityState = null;
 setInterval(async () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  dns.lookup('google.com', (err) => {
-    const currentStatus = !err;
-    if (lastConnectivityState !== currentStatus) {
-      lastConnectivityState = currentStatus;
-      mainWindow.webContents.send('connectivity-status', currentStatus);
-    }
-  });
+  const currentStatus = await checkInternetConnectivity();
+  if (lastConnectivityState !== currentStatus) {
+    lastConnectivityState = currentStatus;
+    mainWindow.webContents.send('connectivity-status', currentStatus);
+  }
 }, 10000);
 
 // IPC Handlers: Controlled & Sanitized Local JSON Operations

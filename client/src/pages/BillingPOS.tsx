@@ -1,7 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Medicine, CartItem, PaymentMethod, Bill } from '../../../shared/types';
+import { Medicine, CartItem, PaymentMethod, Bill, HeldBill } from '../../../shared/types';
 import { apiService } from '../services/api';
+import { OfflineEngine } from '../services/offlineEngine';
 import { PrintInvoiceModal } from '../components/PrintInvoiceModal';
+import { HeldBillsModal } from '../components/HeldBillsModal';
+import { HoldBillPromptModal } from '../components/HoldBillPromptModal';
 import {
   Search,
   Barcode,
@@ -16,7 +19,10 @@ import {
   Banknote,
   MapPin,
   Printer,
-  FileText
+  FileText,
+  Pill,
+  Pause,
+  Play
 } from 'lucide-react';
 
 export const BillingPOS: React.FC = () => {
@@ -27,12 +33,49 @@ export const BillingPOS: React.FC = () => {
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
+  const [heldBills, setHeldBills] = useState<HeldBill[]>(() => {
+    try {
+      const saved = localStorage.getItem('pharmacy_held_bills');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHeldBillsModal, setShowHeldBillsModal] = useState<boolean>(false);
+  const [showHoldPromptModal, setShowHoldPromptModal] = useState<boolean>(false);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [completedBill, setCompletedBill] = useState<Bill | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to sync held bills across localStorage and offline JSON disk storage
+  const updateAndPersistHeldBills = (newBills: HeldBill[]) => {
+    setHeldBills(newBills);
+    try {
+      localStorage.setItem('pharmacy_held_bills', JSON.stringify(newBills));
+    } catch (err) {
+      console.error('Failed to save to localStorage:', err);
+    }
+    OfflineEngine.writeJson('held-bills.json', 'pharmacy_held_bills', newBills);
+  };
+
+  useEffect(() => {
+    const restoreHeldBills = async () => {
+      try {
+        const diskBills = await OfflineEngine.readJson<HeldBill[]>('held-bills.json', 'pharmacy_held_bills', []);
+        if (Array.isArray(diskBills) && diskBills.length > 0) {
+          setHeldBills(diskBills);
+          localStorage.setItem('pharmacy_held_bills', JSON.stringify(diskBills));
+        }
+      } catch (err) {
+        console.error('Failed to restore held bills:', err);
+      }
+    };
+    restoreHeldBills();
+  }, []);
 
   useEffect(() => {
     if (searchInputRef.current) {
@@ -59,8 +102,8 @@ export const BillingPOS: React.FC = () => {
   };
 
   const handleKeyDownSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && medicines.length > 0) {
-      addToCart(medicines[0]);
+    if (e.key === 'Enter') {
+      loadAvailableMedicines(searchTerm);
     }
   };
 
@@ -89,12 +132,13 @@ export const BillingPOS: React.FC = () => {
     const unitPrice = isLoose ? loosePrice : med.sellingPrice;
 
     setCart((prevCart) => {
-      const existingIndex = prevCart.findIndex(item => item.medicineId === med.id && item.unitType === initialUnitType);
+      const existingIndex = prevCart.findIndex(item => item.medicineId === med.id);
       
       if (existingIndex !== -1) {
         const existing = prevCart[existingIndex];
-        const newQty = existing.quantity + 1;
-        const requiredBaseUnits = initialUnitType === 'PACKAGE' ? (newQty * unitsPerPkg) : newQty;
+        const newPkgQty = initialUnitType === 'PACKAGE' ? existing.packageQuantity + 1 : existing.packageQuantity;
+        const newLooseQty = initialUnitType === 'LOOSE' ? existing.looseQuantity + 1 : existing.looseQuantity;
+        const requiredBaseUnits = (newPkgQty * unitsPerPkg) + newLooseQty;
 
         if (requiredBaseUnits > med.quantity) {
           setError(`Cannot add more than available stock (${med.quantity} base units) for '${med.name}'.`);
@@ -102,10 +146,18 @@ export const BillingPOS: React.FC = () => {
         }
 
         const updated = [...prevCart];
-        updated[existingIndex] = { ...existing, quantity: newQty };
+        updated[existingIndex] = {
+          ...existing,
+          packageQuantity: newPkgQty,
+          looseQuantity: newLooseQty,
+          quantity: requiredBaseUnits
+        };
         return updated;
       } else {
-        const requiredBaseUnits = initialUnitType === 'PACKAGE' ? (1 * unitsPerPkg) : 1;
+        const newPkgQty = initialUnitType === 'PACKAGE' ? 1 : 0;
+        const newLooseQty = initialUnitType === 'LOOSE' ? 1 : 0;
+        const requiredBaseUnits = (newPkgQty * unitsPerPkg) + newLooseQty;
+
         if (requiredBaseUnits > med.quantity) {
           setError(`Insufficient stock for '${med.name}'.`);
           return prevCart;
@@ -121,11 +173,15 @@ export const BillingPOS: React.FC = () => {
             batchNumber: med.batchNumber,
             expiryDate: med.expiryDate,
             mrp: med.mrp,
-            sellingPrice: unitPrice,
-            quantity: 1,
+            sellingPrice: med.sellingPrice,
+            packageQuantity: newPkgQty,
+            looseQuantity: newLooseQty,
+            quantity: requiredBaseUnits,
             unitType: initialUnitType,
             unitsPerPackage: unitsPerPkg,
             looseUnitName: med.looseUnitName || 'Tablet',
+            packageType: med.packageType || 'Strip',
+            sellingMode: med.sellingMode || 'FULL_PACKAGE_ONLY',
             availableQuantity: med.quantity,
             barcode: med.barcode
           }
@@ -137,28 +193,36 @@ export const BillingPOS: React.FC = () => {
     if (searchInputRef.current) searchInputRef.current.focus();
   };
 
-  const toggleUnitType = (medicineId: string, currentUnitType: 'PACKAGE' | 'LOOSE') => {
+  const removeFromCart = (medicineId: string) => {
+    setCart(prevCart => prevCart.filter(item => item.medicineId !== medicineId));
+  };
+
+  const updateCartItemQuantities = (medicineId: string, newPkgQty: number, newLooseQty: number) => {
+    setError(null);
+    const pkgQty = Math.max(0, newPkgQty);
+    const looseQty = Math.max(0, newLooseQty);
+
+    if (pkgQty === 0 && looseQty === 0) {
+      removeFromCart(medicineId);
+      return;
+    }
+
     setCart(prevCart =>
       prevCart.map(item => {
         if (item.medicineId === medicineId) {
-          const newUnitType: 'PACKAGE' | 'LOOSE' = currentUnitType === 'PACKAGE' ? 'LOOSE' : 'PACKAGE';
           const unitsPerPkg = item.unitsPerPackage || 1;
-          const origMed = medicines.find(m => m.id === medicineId);
-          const fullPkgPrice = origMed?.sellingPrice || item.sellingPrice;
-          const loosePrice = Math.round((fullPkgPrice / unitsPerPkg) * 100) / 100;
-
-          const newUnitPrice = newUnitType === 'PACKAGE' ? fullPkgPrice : loosePrice;
-          const requiredBaseUnits = newUnitType === 'PACKAGE' ? (item.quantity * unitsPerPkg) : item.quantity;
+          const requiredBaseUnits = (pkgQty * unitsPerPkg) + looseQty;
 
           if (requiredBaseUnits > item.availableQuantity) {
-            setError(`Cannot switch unit type. Stock available is ${item.availableQuantity} base units.`);
+            setError(`Stock limit reached for '${item.name}'. Available: ${item.availableQuantity} base units.`);
             return item;
           }
 
           return {
             ...item,
-            unitType: newUnitType,
-            sellingPrice: newUnitPrice
+            packageQuantity: pkgQty,
+            looseQuantity: looseQty,
+            quantity: requiredBaseUnits
           };
         }
         return item;
@@ -166,36 +230,81 @@ export const BillingPOS: React.FC = () => {
     );
   };
 
-  const updateCartQuantity = (medicineId: string, unitType: 'PACKAGE' | 'LOOSE', newQty: number) => {
-    setError(null);
-    if (newQty <= 0) {
-      removeFromCart(medicineId, unitType);
+  const handleOpenHoldModal = () => {
+    if (cart.length === 0) {
+      setError('Cart is empty. Add items before holding a bill.');
       return;
     }
-
-    setCart(prevCart =>
-      prevCart.map(item => {
-        if (item.medicineId === medicineId && item.unitType === unitType) {
-          const unitsPerPkg = item.unitsPerPackage || 1;
-          const requiredBaseUnits = unitType === 'PACKAGE' ? (newQty * unitsPerPkg) : newQty;
-
-          if (requiredBaseUnits > item.availableQuantity) {
-            setError(`Stock limit reached for '${item.name}'. Available: ${item.availableQuantity} base units.`);
-            return item;
-          }
-          return { ...item, quantity: newQty };
-        }
-        return item;
-      })
-    );
+    setShowHoldPromptModal(true);
   };
 
-  const removeFromCart = (medicineId: string, unitType: 'PACKAGE' | 'LOOSE') => {
-    setCart(prevCart => prevCart.filter(item => !(item.medicineId === medicineId && item.unitType === unitType)));
+  const confirmHoldCart = (customerNameNote?: string) => {
+    if (cart.length === 0) return;
+
+    const newHeldBill: HeldBill = {
+      id: `hold-${Date.now()}`,
+      customerName: customerNameNote,
+      cart: [...cart],
+      discountPercentage,
+      paymentMethod,
+      subtotal,
+      heldAt: new Date().toISOString()
+    };
+
+    const updated = [newHeldBill, ...heldBills];
+    updateAndPersistHeldBills(updated);
+    setCart([]);
+    setDiscountAmount(0);
+    setDiscountPercentage(0);
+    setError(null);
+    setShowHoldPromptModal(false);
+  };
+
+  const handleResumeHeldBill = (heldBillId: string) => {
+    const target = heldBills.find(b => b.id === heldBillId);
+    if (!target) return;
+
+    let updatedHeld = heldBills.filter(b => b.id !== heldBillId);
+
+    // If current active cart has items, preserve active cart into held bills automatically
+    if (cart.length > 0) {
+      const activeCartAsHeld: HeldBill = {
+        id: `hold-${Date.now()}`,
+        customerName: 'Active Sale (Held on Resume)',
+        cart: [...cart],
+        discountPercentage,
+        paymentMethod,
+        subtotal,
+        heldAt: new Date().toISOString()
+      };
+      updatedHeld = [activeCartAsHeld, ...updatedHeld];
+    }
+
+    setCart(target.cart);
+    setDiscountPercentage(target.discountPercentage || 0);
+    setPaymentMethod(target.paymentMethod || 'CASH');
+    updateAndPersistHeldBills(updatedHeld);
+    setShowHeldBillsModal(false);
+    setError(null);
+  };
+
+  const handleDeleteHeldBill = (heldBillId: string) => {
+    const updated = heldBills.filter(b => b.id !== heldBillId);
+    updateAndPersistHeldBills(updated);
+  };
+
+  const handleClearAllHeldBills = () => {
+    updateAndPersistHeldBills([]);
   };
 
   // Computations
-  const subtotal = cart.reduce((sum, item) => sum + item.sellingPrice * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => {
+    const unitsPerPkg = Math.max(1, item.unitsPerPackage || 1);
+    const looseUnitPrice = (Number(item.sellingPrice) || 0) / unitsPerPkg;
+    const pkgTotal = (item.packageQuantity || 0) * (Number(item.sellingPrice) || 0);
+    const looseTotal = (item.looseQuantity || 0) * looseUnitPrice;
+    return sum + pkgTotal + looseTotal;
+  }, 0);
 
   let computedDiscount = discountAmount;
   if (discountPercentage > 0) {
@@ -221,10 +330,13 @@ export const BillingPOS: React.FC = () => {
           name: item.name,
           genericName: item.genericName || item.name,
           unitPrice: Number(item.sellingPrice) || 0,
-          quantity: Number(item.quantity) || 1,
-          unitType: item.unitType || 'PACKAGE',
+          packageQuantity: item.packageQuantity || 0,
+          looseQuantity: item.looseQuantity || 0,
+          quantity: (item.packageQuantity || 0) + (item.looseQuantity || 0),
+          unitType: item.packageQuantity > 0 && item.looseQuantity > 0 ? 'BOTH' : (item.packageQuantity > 0 ? 'PACKAGE' : 'LOOSE'),
           unitsPerPackage: item.unitsPerPackage || 1,
           looseUnitName: item.looseUnitName || 'Tablet',
+          packageType: item.packageType || 'Strip',
           barcode: item.barcode || ''
         })),
         discountAmount: computedDiscount,
@@ -431,11 +543,11 @@ export const BillingPOS: React.FC = () => {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
-      {/* LEFT COLUMN: Medicine Search & Directory Grid */}
-      <div>
-        {/* Search Header Box */}
-        <div className="table-container" style={{ padding: '16px', marginBottom: '16px', background: '#FFFFFF' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: '20px', height: 'calc(100vh - 112px)', overflow: 'hidden' }}>
+      {/* LEFT COLUMN: Medicine Search & Directory Grid (Independent Scroll) */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', paddingRight: '6px' }}>
+        {/* Sticky Search Header Box */}
+        <div className="table-container" style={{ padding: '14px', marginBottom: '14px', background: '#FFFFFF', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <div style={{ position: 'relative' }}>
             <Search size={18} color="#94A3B8" style={{ position: 'absolute', left: '14px', top: '12px' }} />
             <input
@@ -478,6 +590,9 @@ export const BillingPOS: React.FC = () => {
             const unitsPerPkg = Math.max(1, med.unitsPerPackage || 1);
             const pkgQty = Math.floor(med.quantity / unitsPerPkg);
             const looseQty = med.quantity % unitsPerPkg;
+            const looseName = med.looseUnitName || 'Tablet';
+            const pkgName = med.packageType || 'Strip';
+            const loosePrice = Math.round(((med.sellingPrice || 0) / unitsPerPkg) * 100) / 100;
 
             return (
               <div
@@ -510,6 +625,26 @@ export const BillingPOS: React.FC = () => {
                     {med.genericName} | {med.dosageForm || 'Tablet'}
                   </div>
 
+                  {/* 1 Strip Quantity Highlight Badge */}
+                  <div
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: '#1D4ED8',
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      marginBottom: '8px'
+                    }}
+                  >
+                    <Pill size={13} color="#2563EB" />
+                    <span>1 {pkgName} = {unitsPerPkg} {looseName}s</span>
+                  </div>
+
                   <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '8px', marginBottom: '8px' }}>
                     <span>Batch: <strong style={{ fontFamily: 'monospace' }}>{med.batchNumber}</strong></span>
                     <span>Exp: <strong>{med.expiryDate}</strong></span>
@@ -525,13 +660,18 @@ export const BillingPOS: React.FC = () => {
 
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0F766E' }}>
-                      ₹{(Number(med.sellingPrice) || 0).toFixed(2)}
-                      <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 400 }}> / {med.packageType || 'Strip'}</span>
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F766E', lineHeight: 1.2 }}>
+                        ₹{(Number(med.sellingPrice) || 0).toFixed(2)}
+                        <span style={{ fontSize: '10.5px', color: '#64748B', fontWeight: 500 }}> / {pkgName}</span>
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
+                        (₹{loosePrice.toFixed(2)} / {looseName})
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', textAlign: 'right', fontWeight: 600 }}>
-                      {pkgQty > 0 ? `${pkgQty} ${med.packageType || 'Strip'}s ` : ''}
-                      {looseQty > 0 ? `+ ${looseQty} ${med.looseUnitName || 'tbl'}` : ''}
+                    <div style={{ fontSize: '11px', textAlign: 'right', fontWeight: 700, color: '#334155' }}>
+                      {pkgQty > 0 ? `${pkgQty} ${pkgName}s` : ''}
+                      {looseQty > 0 ? ` + ${looseQty} ${looseName}` : ''}
                     </div>
                   </div>
 
@@ -564,122 +704,237 @@ export const BillingPOS: React.FC = () => {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: POS Sales Counter Cart Panel */}
-      <div className="pos-cart-panel" style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
-        {/* Cart Header */}
-        <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* RIGHT COLUMN: POS Sales Counter Cart Panel (Independent Scroll + Fixed Footer) */}
+      <div className="pos-cart-panel" style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid #CBD5E1', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {/* Fixed Cart Header */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: '8px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ShoppingCart size={20} color="var(--primary-blue)" />
-            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>POS Sales Counter</h3>
+            <h3 style={{ fontSize: '15.5px', fontWeight: 700, margin: 0 }}>POS Sales Counter</h3>
           </div>
-          <span className="badge badge-in-stock" style={{ fontSize: '12px' }}>{cart.length} line items</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Held Bills Manager Drawer Button */}
+            {heldBills.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{
+                  background: '#FEF3C7',
+                  color: '#B45309',
+                  borderColor: '#FDE68A',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  gap: '5px',
+                  padding: '4px 10px',
+                  borderRadius: '8px'
+                }}
+                onClick={() => setShowHeldBillsModal(true)}
+                title="View held bills"
+              >
+                <Pause size={14} color="#D97706" />
+                <span>Held Bills ({heldBills.length})</span>
+              </button>
+            )}
+
+            {/* Hold Current Bill Button */}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{
+                fontSize: '12px',
+                gap: '5px',
+                padding: '4px 10px',
+                borderRadius: '8px'
+              }}
+              disabled={cart.length === 0}
+              onClick={handleOpenHoldModal}
+              title="Put current sale on hold and start new sale"
+            >
+              <Pause size={14} />
+              <span>Hold Bill</span>
+            </button>
+          </div>
         </div>
 
-        {/* Cart Items List */}
-        <div style={{ maxHeight: '380px', overflowY: 'auto', padding: '12px' }}>
+        {/* Cart Items List - INDEPENDENT SCROLL AREA */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
           {cart.length === 0 ? (
             <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
               Cart is empty. Scan barcode or click a medicine to add.
             </div>
           ) : (
-            cart.map((item) => (
-              <div
-                key={`${item.medicineId}-${item.unitType}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 12px',
-                  borderBottom: '1px solid #F1F5F9',
-                  background: '#F8FAFC',
-                  borderRadius: '8px',
-                  marginBottom: '8px'
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                    {item.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                    <span style={{ fontFamily: 'monospace' }}>{item.code}</span>
-                    <span>|</span>
-                    <span>₹{(Number(item.sellingPrice) || 0).toFixed(2)} / {item.unitType === 'LOOSE' ? (item.looseUnitName || 'Unit') : 'Package'}</span>
-                  </div>
+            cart.map((item) => {
+              const unitsPerPkg = Math.max(1, item.unitsPerPackage || 1);
+              const pkgPrice = Number(item.sellingPrice) || 0;
+              const loosePrice = Math.round((pkgPrice / unitsPerPkg) * 100) / 100;
+              const itemTotal = ((item.packageQuantity || 0) * pkgPrice) + ((item.looseQuantity || 0) * loosePrice);
 
-                  {/* Unit Mode Switcher Pill */}
-                  <div style={{ display: 'inline-flex', gap: '4px', marginTop: '6px', background: '#E2E8F0', padding: '2px', borderRadius: '6px' }}>
-                    <button
-                      type="button"
-                      style={{
-                        border: 'none',
-                        background: item.unitType === 'PACKAGE' ? '#FFFFFF' : 'transparent',
-                        fontWeight: item.unitType === 'PACKAGE' ? 700 : 400,
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                      onClick={() => toggleUnitType(item.medicineId, 'LOOSE')}
-                    >
-                      Full Package
-                    </button>
-                    <button
-                      type="button"
-                      style={{
-                        border: 'none',
-                        background: item.unitType === 'LOOSE' ? '#FFFFFF' : 'transparent',
-                        fontWeight: item.unitType === 'LOOSE' ? 700 : 400,
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                      onClick={() => toggleUnitType(item.medicineId, 'PACKAGE')}
-                    >
-                      Loose {item.looseUnitName || 'Unit'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Quantity Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '0 10px' }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 6px' }}
-                    onClick={() => updateCartQuantity(item.medicineId, item.unitType || 'PACKAGE', item.quantity - 1)}
-                  >
-                    <Minus size={12} />
-                  </button>
-                  <span style={{ fontWeight: 800, fontSize: '14px', width: '24px', textAlign: 'center' }}>{item.quantity}</span>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ padding: '2px 6px' }}
-                    onClick={() => updateCartQuantity(item.medicineId, item.unitType || 'PACKAGE', item.quantity + 1)}
-                  >
-                    <Plus size={12} />
-                  </button>
-                </div>
-
-                {/* Line Total */}
-                <div style={{ fontWeight: 800, fontSize: '13px', width: '70px', textAlign: 'right', color: '#0F766E' }}>
-                  ₹{(item.sellingPrice * item.quantity).toFixed(2)}
-                </div>
-
-                <button
-                  className="btn btn-secondary btn-sm"
-                  style={{ color: '#DC2626', padding: '4px', marginLeft: '6px' }}
-                  onClick={() => removeFromCart(item.medicineId, item.unitType || 'PACKAGE')}
-                  title="Remove Item"
+              return (
+                <div
+                  key={item.medicineId}
+                  style={{
+                    padding: '12px 14px',
+                    borderBottom: '1px solid #F1F5F9',
+                    background: '#F8FAFC',
+                    borderRadius: '10px',
+                    marginBottom: '10px',
+                    border: '1px solid #CBD5E1'
+                  }}
                 >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))
+                  {/* Item Header & Delete Button */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '13.5px', color: '#0F172A' }}>
+                        {item.name}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'monospace' }}>{item.code}</span>
+                        <span>|</span>
+                        <span>₹{pkgPrice.toFixed(2)} / {item.packageType || 'Strip'}</span>
+                        {item.sellingMode === 'FULL_PACKAGE_AND_LOOSE' && (
+                          <>
+                            <span>•</span>
+                            <span>₹{loosePrice.toFixed(2)} / {item.looseUnitName || 'Tablet'}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F766E', textAlign: 'right' }}>
+                        ₹{itemTotal.toFixed(2)}
+                      </div>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: '#DC2626', padding: '4px 6px', borderRadius: '6px' }}
+                        onClick={() => removeFromCart(item.medicineId)}
+                        title="Remove Item"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dual Quantity Inputs Area */}
+                  <div style={{ background: '#FFFFFF', padding: '8px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {/* Package Quantity Row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: '#334155', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>📦 {item.packageType || 'Strip'}s (Full):</span>
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '2px 6px', height: '26px' }}
+                          onClick={() => updateCartItemQuantities(item.medicineId, item.packageQuantity - 1, item.looseQuantity)}
+                          title="Decrease full strips"
+                        >
+                          <Minus size={11} />
+                        </button>
+
+                        <input
+                          type="number"
+                          min="0"
+                          className="form-control"
+                          style={{
+                            width: '52px',
+                            height: '26px',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            fontSize: '12.5px',
+                            padding: '2px 4px',
+                            borderRadius: '6px',
+                            border: '1px solid #CBD5E1',
+                            color: '#0F172A'
+                          }}
+                          value={item.packageQuantity === 0 ? '0' : item.packageQuantity}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            updateCartItemQuantities(item.medicineId, isNaN(val) ? 0 : val, item.looseQuantity);
+                          }}
+                        />
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '2px 6px', height: '26px' }}
+                          onClick={() => updateCartItemQuantities(item.medicineId, item.packageQuantity + 1, item.looseQuantity)}
+                          title="Increase full strips"
+                        >
+                          <Plus size={11} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Loose Unit Quantity Row (Only if FULL_PACKAGE_AND_LOOSE) */}
+                    {item.sellingMode === 'FULL_PACKAGE_AND_LOOSE' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', borderTop: '1px dashed #F1F5F9', paddingTop: '4px' }}>
+                        <span style={{ color: '#0F766E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>💊 Loose {item.looseUnitName || 'Tablet'}s:</span>
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '2px 6px', height: '26px' }}
+                            onClick={() => updateCartItemQuantities(item.medicineId, item.packageQuantity, item.looseQuantity - 1)}
+                            title="Decrease loose tablets"
+                          >
+                            <Minus size={11} />
+                          </button>
+
+                          <input
+                            type="number"
+                            min="0"
+                            className="form-control"
+                            style={{
+                              width: '52px',
+                              height: '26px',
+                              textAlign: 'center',
+                              fontWeight: 800,
+                              fontSize: '12.5px',
+                              padding: '2px 4px',
+                              borderRadius: '6px',
+                              border: '1px solid #99F6E4',
+                              color: '#0F766E',
+                              background: '#F0FDF4'
+                            }}
+                            value={item.looseQuantity === 0 ? '0' : item.looseQuantity}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              updateCartItemQuantities(item.medicineId, item.packageQuantity, isNaN(val) ? 0 : val);
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '2px 6px', height: '26px' }}
+                            onClick={() => updateCartItemQuantities(item.medicineId, item.packageQuantity, item.looseQuantity + 1)}
+                            title="Increase loose tablets"
+                          >
+                            <Plus size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '10.5px', color: '#64748B', fontStyle: 'italic', borderTop: '1px dashed #F1F5F9', paddingTop: '4px' }}>
+                        Full package sales only
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
 
-        {/* Summary & Payment Selection */}
-        <div style={{ padding: '16px', background: '#F8FAFC', borderTop: '1px solid var(--border-color)', borderRadius: '0 0 12px 12px' }}>
+        {/* Fixed Summary & Payment Selection Footer */}
+        <div style={{ padding: '14px 16px', background: '#F8FAFC', borderTop: '1px solid var(--border-color)', flexShrink: 0, borderRadius: '0 0 12px 12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
             <span style={{ color: 'var(--text-secondary)' }}>Subtotal:</span>
             <span style={{ fontWeight: 600 }}>₹{subtotal.toFixed(2)}</span>
@@ -748,6 +1003,27 @@ export const BillingPOS: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* HeldBillsModal Dialog */}
+      {showHeldBillsModal && (
+        <HeldBillsModal
+          heldBills={heldBills}
+          onClose={() => setShowHeldBillsModal(false)}
+          onResume={handleResumeHeldBill}
+          onDelete={handleDeleteHeldBill}
+          onClearAll={handleClearAllHeldBills}
+        />
+      )}
+
+      {/* HoldBillPromptModal Dialog */}
+      {showHoldPromptModal && (
+        <HoldBillPromptModal
+          itemCount={cart.reduce((sum, i) => sum + (i.packageQuantity || 0) + (i.looseQuantity || 0), 0)}
+          subtotal={subtotal}
+          onConfirm={confirmHoldCart}
+          onClose={() => setShowHoldPromptModal(false)}
+        />
+      )}
     </div>
   );
 };

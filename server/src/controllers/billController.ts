@@ -49,10 +49,11 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
       }
 
       // Business Rule Check: Package vs Loose Selling Mode validation
-      const unitType = item.unitType || 'PACKAGE';
       const unitsPerPackage = med.unitsPerPackage && Number(med.unitsPerPackage) >= 1 ? Number(med.unitsPerPackage) : 1;
+      const pkgQty = Number(item.packageQuantity) || (item.unitType === 'PACKAGE' ? Number(item.quantity) || 0 : 0);
+      const looseQty = Number(item.looseQuantity) || (item.unitType === 'LOOSE' ? Number(item.quantity) || 0 : 0);
 
-      if (unitType === 'LOOSE' && med.sellingMode === 'FULL_PACKAGE_ONLY') {
+      if (looseQty > 0 && med.sellingMode === 'FULL_PACKAGE_ONLY') {
         return res.status(400).json({
           success: false,
           message: `'${med.name}' is configured for FULL PACKAGE sales only. Loose unit sales are disabled.`
@@ -60,7 +61,7 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
       }
 
       // Calculate required base units
-      const requiredBaseUnits = unitType === 'PACKAGE' ? (Number(item.quantity) * unitsPerPackage) : Number(item.quantity);
+      const requiredBaseUnits = (pkgQty * unitsPerPackage) + looseQty;
 
       // Business Rule Check: Stock MUST NOT become negative!
       if (med.quantity < requiredBaseUnits) {
@@ -80,13 +81,15 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
       const index = localMedicines.findIndex(m => m.id === item.medicineId || m.barcode === item.barcode || m.code === item.code);
       const med = localMedicines[index];
 
-      const unitType = item.unitType || 'PACKAGE';
       const unitsPerPackage = med.unitsPerPackage && Number(med.unitsPerPackage) >= 1 ? Number(med.unitsPerPackage) : 1;
-      const baseUnitsDeducted = unitType === 'PACKAGE' ? (Number(item.quantity) * unitsPerPackage) : Number(item.quantity);
+      const pkgPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
+      const loosePrice = Math.round((pkgPrice / unitsPerPackage) * 100) / 100;
 
-      const unitPrice = Number(item.unitPrice) || Number(med.sellingPrice) || 0;
-      const quantity = Math.max(1, Number(item.quantity) || 1);
-      const totalPrice = Math.round(unitPrice * quantity * 100) / 100;
+      const pkgQty = Number(item.packageQuantity) || (item.unitType === 'PACKAGE' ? Number(item.quantity) || 0 : 0);
+      const looseQty = Number(item.looseQuantity) || (item.unitType === 'LOOSE' ? Number(item.quantity) || 0 : 0);
+
+      const baseUnitsDeducted = (pkgQty * unitsPerPackage) + looseQty;
+      const totalPrice = Math.round(((pkgPrice * pkgQty) + (loosePrice * looseQty)) * 100) / 100;
 
       med.quantity -= baseUnitsDeducted;
       subtotal += totalPrice;
@@ -105,11 +108,14 @@ export const createBill = async (req: AuthenticatedRequest, res: Response) => {
         genericName: med.genericName || med.name,
         batchNumber: med.batchNumber,
         expiryDate: med.expiryDate,
-        unitPrice,
-        quantity,
-        unitType,
+        unitPrice: pkgPrice,
+        packageQuantity: pkgQty,
+        looseQuantity: looseQty,
+        quantity: Number(item.quantity) || (pkgQty + looseQty) || 1,
+        unitType: pkgQty > 0 && looseQty > 0 ? 'BOTH' : (pkgQty > 0 ? 'PACKAGE' : 'LOOSE'),
         unitsPerPackage,
         looseUnitName: med.looseUnitName || 'Tablet',
+        packageType: med.packageType || 'Strip',
         baseUnitsDeducted,
         totalPrice
       });

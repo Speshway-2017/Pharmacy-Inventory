@@ -6,6 +6,6 @@ const router = Router();
 
 router.post('/', protect, syncOfflineTransactions);
 router.post('/offline', protect, syncOfflineTransactions);
-router.get('/status', protect, getSyncStatus);
+router.get('/status', getSyncStatus);
 
 export default router;

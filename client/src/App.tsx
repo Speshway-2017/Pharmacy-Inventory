@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SyncProvider } from './context/SyncContext';
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -26,6 +26,21 @@ const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [selectedMedicineDetails, setSelectedMedicineDetails] = useState<Medicine | null>(null);
+
+  // Global Alt + F9 Shortcut to jump to POS Billing Counter
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'F9' || e.code === 'F9')) {
+        e.preventDefault();
+        setActiveTab('billing');
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
 
   if (!user) {
     return <Login />;

@@ -55,10 +55,14 @@ export interface CartItem {
   expiryDate: string;
   mrp: number;
   sellingPrice: number;
-  quantity: number; // Quantity in selected unitType (e.g., 2 strips or 3 loose tablets)
-  unitType?: 'PACKAGE' | 'LOOSE';
-  unitsPerPackage?: number;
-  looseUnitName?: string;
+  packageQuantity: number; // Full packages count (e.g. 2 strips)
+  looseQuantity: number; // Loose units count (e.g. 3 tablets)
+  quantity: number; // Total item display quantity
+  unitType?: 'PACKAGE' | 'LOOSE' | 'BOTH';
+  unitsPerPackage: number;
+  looseUnitName: string;
+  packageType: string;
+  sellingMode?: SellingMode;
   availableQuantity: number; // Total available base units
   barcode: string;
 }
@@ -71,10 +75,13 @@ export interface BillItem {
   batchNumber: string;
   expiryDate: string;
   unitPrice: number;
+  packageQuantity?: number;
+  looseQuantity?: number;
   quantity: number;
-  unitType?: 'PACKAGE' | 'LOOSE';
+  unitType?: 'PACKAGE' | 'LOOSE' | 'BOTH';
   unitsPerPackage?: number;
   looseUnitName?: string;
+  packageType?: string;
   baseUnitsDeducted?: number;
   totalPrice: number;
 }
@@ -98,6 +105,17 @@ export interface Bill {
   isOfflineCreated: boolean;
   syncStatus: SyncStatus;
   createdAt?: string;
+}
+
+export interface HeldBill {
+  id: string;
+  customerName?: string;
+  note?: string;
+  cart: CartItem[];
+  discountPercentage: number;
+  paymentMethod: PaymentMethod;
+  subtotal: number;
+  heldAt: string;
 }
 
 export type SyncOperationType =
