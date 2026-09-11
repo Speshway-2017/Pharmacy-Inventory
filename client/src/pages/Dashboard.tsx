@@ -61,6 +61,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
 
   useEffect(() => {
     fetchDashboardData();
+
+    const handleRestored = () => {
+      fetchDashboardData();
+    };
+
+    window.addEventListener('pharmacy:data-restored', handleRestored);
+    return () => {
+      window.removeEventListener('pharmacy:data-restored', handleRestored);
+    };
   }, []);
 
   const quickTools = [

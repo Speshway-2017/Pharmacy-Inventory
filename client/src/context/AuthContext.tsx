@@ -14,17 +14,71 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   token: null,
   login: async () => false,
-  logout: () => {},
+  logout: () => { },
   isAdmin: false
 });
 
+const isTokenExpired = (tokenStr: string | null): boolean => {
+  if (!tokenStr) return true;
+  if (tokenStr === 'mock_offline_admin_token') return false;
+  try {
+    const parts = tokenStr.split('.');
+    if (parts.length !== 3) return false;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const decoded = JSON.parse(jsonPayload);
+    if (decoded && decoded.exp && decoded.exp * 1000 <= Date.now()) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
+    const currentToken = localStorage.getItem('pharmacy_jwt_token');
+    if (!currentToken || isTokenExpired(currentToken)) {
+      localStorage.removeItem('pharmacy_jwt_token');
+      localStorage.removeItem('pharmacy_user');
+      return null;
+    }
     const raw = localStorage.getItem('pharmacy_user');
     return raw ? JSON.parse(raw) : null;
   });
 
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('pharmacy_jwt_token'));
+  const [token, setToken] = useState<string | null>(() => {
+    const currentToken = localStorage.getItem('pharmacy_jwt_token');
+    if (!currentToken || isTokenExpired(currentToken)) {
+      return null;
+    }
+    return currentToken;
+  });
+
+  // Listen for unauthorized 401 events to cleanly reset auth state
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+      setToken(null);
+      localStorage.removeItem('pharmacy_jwt_token');
+      localStorage.removeItem('pharmacy_user');
+      if (window.electronAPI?.writeLocalJson) {
+        window.electronAPI.writeLocalJson('session.json', null);
+      }
+    };
+
+    window.addEventListener('pharmacy:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('pharmacy:unauthorized', handleUnauthorized);
+    };
+  }, []);
 
   // On mount: Restore session from disk (session.json) if localStorage was cleared
   useEffect(() => {
@@ -34,6 +88,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (window.electronAPI?.readLocalJson) {
             const diskSession = await window.electronAPI.readLocalJson('session.json');
             if (diskSession && diskSession.user && diskSession.token) {
+              if (isTokenExpired(diskSession.token)) {
+                // Clear expired disk session so it does not resurrect stale sessions
+                await window.electronAPI.writeLocalJson('session.json', null);
+                localStorage.removeItem('pharmacy_jwt_token');
+                localStorage.removeItem('pharmacy_user');
+                return;
+              }
               setUser(diskSession.user);
               setToken(diskSession.token);
               localStorage.setItem('pharmacy_user', JSON.stringify(diskSession.user));

@@ -10,7 +10,7 @@ const getJwtSecret = (): string => {
   return process.env.JWT_SECRET || 'super_secret_pharmacy_jwt_key_2026_change_in_production';
 };
 
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
 
 export const initAdminAccount = async () => {
   const adminName = process.env.ADMIN_USERNAME || 'Pharmacy Admin';
@@ -104,7 +104,7 @@ export const login = async (req: Request, res: Response) => {
       },
       secret,
       {
-        expiresIn: '8h',
+        expiresIn: (JWT_EXPIRES_IN as any),
         issuer: 'pharmacy-desktop-backend',
         audience: 'pharmacy-desktop-app'
       }

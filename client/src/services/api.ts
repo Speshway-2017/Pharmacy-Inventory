@@ -26,9 +26,10 @@ api.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('pharmacy_jwt_token');
       localStorage.removeItem('pharmacy_user');
-      if (window.location.pathname !== '/') {
-        window.location.reload();
+      if (window.electronAPI?.writeLocalJson) {
+        window.electronAPI.writeLocalJson('session.json', null);
       }
+      window.dispatchEvent(new CustomEvent('pharmacy:unauthorized'));
     }
     return Promise.reject(error);
   }
@@ -487,6 +488,11 @@ export const apiService = {
   },
 
   async triggerSync() {
+    const token = localStorage.getItem('pharmacy_jwt_token');
+    if (!token) {
+      return { success: false, message: 'Authentication required. Authorization token missing.' };
+    }
+
     try {
       const queue = await OfflineEngine.readJson<any[]>('sync-queue.json', 'pharmacy_local_sync_queue', []);
       const pending = queue.filter(q => q.status === 'PENDING');
@@ -495,7 +501,10 @@ export const apiService = {
       let res;
       try {
         res = await api.post('/sync', { queue: pending });
-      } catch (e) {
+      } catch (e: any) {
+        if (e.response && e.response.status === 401) {
+          throw e;
+        }
         res = await api.post('/sync/offline', { queue: pending });
       }
 
@@ -525,5 +534,71 @@ export const apiService = {
       const pendingCount = await OfflineEngine.getPendingSyncCount();
       return { success: false, isOnline: false, pendingCount };
     }
+  },
+
+  // Full Cloud Backup: Uploads all local datasets into registered MongoDB Atlas
+  async backupToCloud() {
+    const token = localStorage.getItem('pharmacy_jwt_token');
+    if (!token) {
+      throw new Error('Authentication required. Please sign in to perform a cloud backup.');
+    }
+
+    const medicines = await OfflineEngine.readJson<Medicine[]>('medicines.json', 'pharmacy_local_medicines', []);
+    const bills = await OfflineEngine.readJson<Bill[]>('bills.json', 'pharmacy_local_bills', []);
+    const categories = await OfflineEngine.readJson<Category[]>('categories.json', 'pharmacy_local_categories', []);
+    const settings = await OfflineEngine.readJson<PharmacySettings | null>('settings.json', 'pharmacy_local_settings', null);
+    const stockMovements = await OfflineEngine.readJson<any[]>('stock-movements.json', 'pharmacy_local_stock_movements', []);
+
+    const payload = {
+      medicines,
+      bills,
+      categories,
+      settings,
+      stockMovements
+    };
+
+    const res = await api.post('/sync/backup', payload);
+    if (res.data?.success) {
+      // Clear pending queue since all records were fully backed up
+      await OfflineEngine.writeJson('sync-queue.json', 'pharmacy_local_sync_queue', []);
+    }
+    return res.data;
+  },
+
+  // Full Cloud Restore: Downloads all datasets from registered MongoDB Atlas into local application
+  async restoreFromCloud() {
+    const token = localStorage.getItem('pharmacy_jwt_token');
+    if (!token) {
+      throw new Error('Authentication required. Please sign in to restore cloud data.');
+    }
+
+    const res = await api.post('/sync/restore');
+    if (res.data?.success && res.data.data) {
+      const { medicines, bills, categories, settings, stockMovements } = res.data.data;
+
+      // Update offline persistent JSON files and localStorage caches
+      if (Array.isArray(medicines)) {
+        await OfflineEngine.writeJson('medicines.json', 'pharmacy_local_medicines', medicines);
+      }
+      if (Array.isArray(bills)) {
+        await OfflineEngine.writeJson('bills.json', 'pharmacy_local_bills', bills);
+      }
+      if (Array.isArray(categories)) {
+        await OfflineEngine.writeJson('categories.json', 'pharmacy_local_categories', categories);
+      }
+      if (settings) {
+        await OfflineEngine.writeJson('settings.json', 'pharmacy_local_settings', settings);
+      }
+      if (Array.isArray(stockMovements)) {
+        await OfflineEngine.writeJson('stock-movements.json', 'pharmacy_local_stock_movements', stockMovements);
+      }
+
+      // Clear sync queue
+      await OfflineEngine.writeJson('sync-queue.json', 'pharmacy_local_sync_queue', []);
+
+      // Dispatch global event so active pages re-fetch immediately
+      window.dispatchEvent(new CustomEvent('pharmacy:data-restored', { detail: res.data.stats }));
+    }
+    return res.data;
   }
 };

@@ -8,7 +8,7 @@
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "dev:electron": "electron electron/main.js",
-    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT,ELECTRON\" -c \"bgBlue.bold,bgGreen.bold,bgMagenta.bold\" \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT,ELECTRON\" -c \"bgBlue.bold,bgGreen.bold,bgMagenta.bold\" \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:5173 http://localhost:5000/api/health && npm run dev:electron\"",
     "build:shared": "npm --prefix shared run build",
     "build:server": "npm --prefix server run build",
     "build:client": "npm --prefix client run build",

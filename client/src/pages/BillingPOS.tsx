@@ -82,6 +82,12 @@ export const BillingPOS: React.FC = () => {
       searchInputRef.current.focus();
     }
     loadAvailableMedicines();
+
+    const handleRestored = () => loadAvailableMedicines();
+    window.addEventListener('pharmacy:data-restored', handleRestored);
+    return () => {
+      window.removeEventListener('pharmacy:data-restored', handleRestored);
+    };
   }, []);
 
   const loadAvailableMedicines = async (query: string = '') => {

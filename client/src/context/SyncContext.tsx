@@ -6,20 +6,30 @@ interface SyncContextType {
   isOnline: boolean;
   pendingSyncCount: number;
   isSyncing: boolean;
+  isBackingUp: boolean;
+  isRestoring: boolean;
   triggerSync: () => Promise<void>;
+  backupToCloud: () => Promise<any>;
+  restoreFromCloud: () => Promise<any>;
 }
 
 const SyncContext = createContext<SyncContextType>({
   isOnline: true,
   pendingSyncCount: 0,
   isSyncing: false,
-  triggerSync: async () => {}
+  isBackingUp: false,
+  isRestoring: false,
+  triggerSync: async () => { },
+  backupToCloud: async () => null,
+  restoreFromCloud: async () => null
 });
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isBackingUp, setIsBackingUp] = useState<boolean>(false);
+  const [isRestoring, setIsRestoring] = useState<boolean>(false);
 
   const checkConnectivityAndSyncQueue = async () => {
     try {
@@ -34,7 +44,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsOnline(currentlyOnline);
       setPendingSyncCount(count);
 
-      if (currentlyOnline && count > 0 && !isSyncing) {
+      const token = localStorage.getItem('pharmacy_jwt_token');
+      if (currentlyOnline && count > 0 && !isSyncing && token) {
         triggerSyncHandler();
       }
     } catch (err) {
@@ -46,17 +57,27 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const triggerSyncHandler = async () => {
+    const token = localStorage.getItem('pharmacy_jwt_token');
+    if (!token) {
+      return;
+    }
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      await apiService.triggerSync();
+      const syncResult = await apiService.triggerSync();
+      if (!syncResult?.success && syncResult?.message?.includes('Authentication required')) {
+        return;
+      }
       const statusRes = await apiService.getSyncStatus();
       const newCount = statusRes?.pendingCount !== undefined ? statusRes.pendingCount : await OfflineEngine.getPendingSyncCount();
       setPendingSyncCount(newCount);
       if (statusRes?.isOnline !== undefined) {
         setIsOnline(statusRes.isOnline);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication required') || err?.response?.status === 401) {
+        return;
+      }
       console.warn('Sync attempt failed:', err);
     } finally {
       setIsSyncing(false);
@@ -70,7 +91,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const handleOnline = () => {
       setIsOnline(true);
-      triggerSyncHandler();
+      const token = localStorage.getItem('pharmacy_jwt_token');
+      if (token) triggerSyncHandler();
     };
 
     const handleOffline = () => {
@@ -83,7 +105,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (window.electronAPI?.onConnectivityChange) {
       window.electronAPI.onConnectivityChange((status) => {
         setIsOnline(status);
-        if (status) triggerSyncHandler();
+        const token = localStorage.getItem('pharmacy_jwt_token');
+        if (status && token) triggerSyncHandler();
       });
     }
 
@@ -94,13 +117,41 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  const backupToCloudHandler = async () => {
+    if (isBackingUp) return null;
+    setIsBackingUp(true);
+    try {
+      const res = await apiService.backupToCloud();
+      setPendingSyncCount(0);
+      return res;
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const restoreFromCloudHandler = async () => {
+    if (isRestoring) return null;
+    setIsRestoring(true);
+    try {
+      const res = await apiService.restoreFromCloud();
+      setPendingSyncCount(0);
+      return res;
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <SyncContext.Provider
       value={{
         isOnline,
         pendingSyncCount,
         isSyncing,
-        triggerSync: triggerSyncHandler
+        isBackingUp,
+        isRestoring,
+        triggerSync: triggerSyncHandler,
+        backupToCloud: backupToCloudHandler,
+        restoreFromCloud: restoreFromCloudHandler
       }}
     >
       {children}

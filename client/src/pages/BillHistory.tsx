@@ -26,6 +26,12 @@ export const BillHistory: React.FC = () => {
 
   useEffect(() => {
     fetchBills();
+
+    const handleRestored = () => fetchBills();
+    window.addEventListener('pharmacy:data-restored', handleRestored);
+    return () => {
+      window.removeEventListener('pharmacy:data-restored', handleRestored);
+    };
   }, [searchTerm]);
 
   return (

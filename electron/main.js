@@ -1,3 +1,5 @@
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -65,10 +67,16 @@ function createWindow() {
 }
 
 function startEmbeddedBackendServer() {
+  // In development mode, the server is run concurrently by nodemon/ts-node (npm run dev:server).
+  // Only launch embedded backend server in production when packaged as an executable.
+  if (!app.isPackaged) {
+    return false;
+  }
+
   const possiblePaths = [
-    path.join(__dirname, '../server/dist/server.js'),
     path.join(process.resourcesPath || '', 'app/server/dist/server.js'),
-    path.join(process.resourcesPath || '', 'server/dist/server.js')
+    path.join(process.resourcesPath || '', 'server/dist/server.js'),
+    path.join(__dirname, '../server/dist/server.js')
   ];
 
   for (const serverPath of possiblePaths) {
@@ -143,13 +151,13 @@ ipcMain.handle('get-printers', async () => {
 // Set public DNS servers for Electron main process to ensure DNS lookup reliability on Windows
 try {
   dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
-} catch (dnsErr) {}
+} catch (dnsErr) { }
 
 async function checkInternetConnectivity() {
   return new Promise((resolve) => {
     try {
       dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
-    } catch (e) {}
+    } catch (e) { }
 
     // 1. Try dns.resolve4 with public DNS configured
     dns.resolve4('google.com', (err1) => {
@@ -189,7 +197,17 @@ setInterval(async () => {
 }, 10000);
 
 // IPC Handlers: Controlled & Sanitized Local JSON Operations
-const ALLOWED_JSON_FILES = new Set(['medicines.json', 'bills.json', 'settings.json', 'sync-queue.json', 'users.json', 'categories.json', 'session.json']);
+const ALLOWED_JSON_FILES = new Set([
+  'medicines.json',
+  'bills.json',
+  'settings.json',
+  'sync-queue.json',
+  'users.json',
+  'categories.json',
+  'session.json',
+  'stock-movements.json',
+  'held-bills.json'
+]);
 
 ipcMain.handle('read-local-json', async (event, filename) => {
   if (typeof filename !== 'string' || !ALLOWED_JSON_FILES.has(path.basename(filename))) {

@@ -59,9 +59,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Security: Request size limits to prevent payload abuse
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+// Security: Request size limits to allow bulk backup payloads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Security: Rate Limiting
 const apiLimiter = rateLimit({
@@ -132,7 +132,7 @@ const startServer = async () => {
   await initAdminAccount();
 
   const portNum = Number(PORT);
-  app.listen(portNum, '0.0.0.0', () => {
+  const server = app.listen(portNum, '0.0.0.0', () => {
     const localIps = getLocalNetworkIps();
     console.log(`🚀 Secure Pharmacy Backend API running on port ${portNum}`);
     console.log(`📡 Local API URL: http://localhost:${portNum}/api`);
@@ -145,6 +145,14 @@ const startServer = async () => {
       localIps.forEach(ip => {
         console.log(`   - http://${ip}:5173`);
       });
+    }
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`ℹ️ Port ${portNum} is currently in use. Existing active instance is serving requests.`);
+    } else {
+      console.error('❌ Server startup error:', err);
     }
   });
 };

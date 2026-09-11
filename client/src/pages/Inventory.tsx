@@ -116,9 +116,12 @@ export const Inventory: React.FC<InventoryProps> = ({
       loadData();
     }
     const handleGlobalClick = () => setOpenMenuId(null);
+    const handleRestored = () => loadData();
     window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('pharmacy:data-restored', handleRestored);
     return () => {
       window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('pharmacy:data-restored', handleRestored);
     };
   }, [
     propSearchTerm,

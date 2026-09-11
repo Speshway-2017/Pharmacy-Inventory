@@ -7,6 +7,7 @@ import Bill from '../models/Bill';
 import Medicine from '../models/Medicine';
 import Category from '../models/Category';
 import PharmacySettings from '../models/PharmacySettings';
+import StockMovement from '../models/StockMovement';
 
 export const syncOfflineTransactions = async (req: Request, res: Response) => {
   try {
@@ -193,4 +194,230 @@ export const getSyncStatus = async (req: Request, res: Response) => {
     failedCount,
     queue
   });
+};
+
+export const backupToCloud = async (req: Request, res: Response) => {
+  try {
+    if (!getIsDBConnected()) {
+      await connectDB();
+    }
+
+    if (!getIsDBConnected()) {
+      return res.status(503).json({
+        success: false,
+        message: 'Cloud Database (MongoDB) is unavailable. Please check your internet connection and MongoDB configuration.'
+      });
+    }
+
+    const clientData = req.body || {};
+    const localMedicines = Array.isArray(clientData.medicines) && clientData.medicines.length > 0
+      ? clientData.medicines
+      : LocalStore.getMedicines();
+    const localBills = Array.isArray(clientData.bills) && clientData.bills.length > 0
+      ? clientData.bills
+      : LocalStore.getBills();
+    const localCategories = Array.isArray(clientData.categories) && clientData.categories.length > 0
+      ? clientData.categories
+      : LocalStore.getCategories();
+    const localSettings = clientData.settings || LocalStore.getSettings();
+    const localMovements = Array.isArray(clientData.stockMovements) && clientData.stockMovements.length > 0
+      ? clientData.stockMovements
+      : LocalStore.getStockMovements();
+
+    let backedUpMedicines = 0;
+    let backedUpBills = 0;
+    let backedUpCategories = 0;
+    let backedUpMovements = 0;
+
+    // 1. Backup Medicines
+    for (const med of localMedicines) {
+      if (!med || (!med.id && !med.code)) continue;
+      const cleanMed = { ...med };
+      delete cleanMed._id;
+      delete cleanMed.__v;
+      const query = med.id ? { id: med.id } : { code: med.code };
+      await Medicine.findOneAndUpdate(query, { $set: cleanMed }, { upsert: true, new: true });
+      backedUpMedicines++;
+    }
+
+    // 2. Backup Bills
+    for (const bill of localBills) {
+      if (!bill || (!bill.invoiceNumber && !bill.id)) continue;
+      const cleanBill: any = { ...bill };
+      delete cleanBill._id;
+      delete cleanBill.__v;
+      cleanBill.syncStatus = 'SYNCED';
+      if (Array.isArray(cleanBill.items)) {
+        cleanBill.items = cleanBill.items.map((it: any) => {
+          const itemCopy = { ...it };
+          delete itemCopy._id;
+          delete itemCopy.__v;
+          return itemCopy;
+        });
+      }
+      const query = bill.invoiceNumber ? { invoiceNumber: bill.invoiceNumber } : { id: bill.id };
+      await Bill.findOneAndUpdate(query, { $set: cleanBill }, { upsert: true, new: true });
+      backedUpBills++;
+    }
+
+    // 3. Backup Categories
+    for (const cat of localCategories) {
+      if (!cat || (!cat.id && !cat.name)) continue;
+      const cleanCat: any = { ...cat };
+      delete cleanCat._id;
+      delete cleanCat.__v;
+      const query = cat.id ? { id: cat.id } : { name: cat.name };
+      await Category.findOneAndUpdate(query, { $set: cleanCat }, { upsert: true, new: true });
+      backedUpCategories++;
+    }
+
+    // 4. Backup Settings
+    if (localSettings && typeof localSettings === 'object') {
+      const cleanSettings = { ...localSettings };
+      delete cleanSettings._id;
+      delete cleanSettings.__v;
+      await PharmacySettings.findOneAndUpdate({}, { $set: cleanSettings }, { upsert: true, new: true });
+    }
+
+    // 5. Backup Stock Movements
+    for (const sm of localMovements) {
+      if (!sm || !sm.id) continue;
+      const cleanSm = { ...sm };
+      delete cleanSm._id;
+      delete cleanSm.__v;
+      await StockMovement.findOneAndUpdate({ id: sm.id }, { $set: cleanSm }, { upsert: true, new: true });
+      backedUpMovements++;
+    }
+
+    // 6. Clear pending sync queue as all local data is now backed up
+    LocalStore.saveSyncQueue([]);
+
+    // Keep server's local store in sync
+    LocalStore.saveMedicines(localMedicines);
+    LocalStore.saveBills(localBills);
+    LocalStore.saveCategories(localCategories);
+    if (localSettings) LocalStore.saveSettings(localSettings);
+    LocalStore.saveStockMovements(localMovements);
+
+    return res.json({
+      success: true,
+      message: 'Cloud backup completed successfully.',
+      timestamp: new Date().toISOString(),
+      stats: {
+        medicines: backedUpMedicines,
+        bills: backedUpBills,
+        categories: backedUpCategories,
+        stockMovements: backedUpMovements
+      }
+    });
+  } catch (error: any) {
+    console.error('Backup error:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Cloud backup failed: ${error.message}`
+    });
+  }
+};
+
+export const restoreFromCloud = async (req: Request, res: Response) => {
+  try {
+    if (!getIsDBConnected()) {
+      await connectDB();
+    }
+
+    if (!getIsDBConnected()) {
+      return res.status(503).json({
+        success: false,
+        message: 'Cloud Database (MongoDB) is unavailable. Please check your internet connection.'
+      });
+    }
+
+    // 1. Retrieve all records from MongoDB Atlas
+    const cloudMedicines = await Medicine.find().lean();
+    const cloudBills = await Bill.find().sort({ createdAt: -1 }).lean();
+    const cloudCategories = await Category.find().sort({ name: 1 }).lean();
+    const cloudSettings = await PharmacySettings.findOne().lean();
+    const cloudMovements = await StockMovement.find().sort({ createdAt: -1 }).lean();
+
+    if (cloudMedicines.length === 0 && cloudBills.length === 0 && cloudCategories.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No backup records found in Cloud Database. Please click Backup first to save your data to the cloud.'
+      });
+    }
+
+    const mappedMedicines = cloudMedicines.map((m: any) => {
+      const copy = { ...m, id: m.id || m._id?.toString() };
+      delete copy._id;
+      delete copy.__v;
+      return copy;
+    });
+
+    const mappedBills = cloudBills.map((b: any) => {
+      const copy = { ...b, id: b.id || b._id?.toString(), syncStatus: 'SYNCED' };
+      delete copy._id;
+      delete copy.__v;
+      if (Array.isArray(copy.items)) {
+        copy.items = copy.items.map((it: any) => {
+          const itemCopy = { ...it };
+          delete itemCopy._id;
+          delete itemCopy.__v;
+          return itemCopy;
+        });
+      }
+      return copy;
+    });
+
+    const mappedCategories = cloudCategories.map((c: any) => {
+      const copy = { ...c, id: c.id || c._id?.toString() };
+      delete copy._id;
+      delete copy.__v;
+      return copy;
+    });
+
+    const mappedMovements = cloudMovements.map((sm: any) => {
+      const copy = { ...sm, id: sm.id || sm._id?.toString() };
+      delete copy._id;
+      delete copy.__v;
+      return copy;
+    });
+
+    // 2. Persist to server LocalStore
+    LocalStore.saveMedicines(mappedMedicines);
+    LocalStore.saveBills(mappedBills);
+    LocalStore.saveCategories(mappedCategories);
+    if (cloudSettings) {
+      const cleanSettings: any = { ...cloudSettings };
+      delete cleanSettings._id;
+      delete cleanSettings.__v;
+      LocalStore.saveSettings(cleanSettings);
+    }
+    LocalStore.saveStockMovements(mappedMovements);
+    LocalStore.saveSyncQueue([]);
+
+    return res.json({
+      success: true,
+      message: 'Cloud data restored successfully to local storage.',
+      timestamp: new Date().toISOString(),
+      stats: {
+        medicines: mappedMedicines.length,
+        bills: mappedBills.length,
+        categories: mappedCategories.length,
+        stockMovements: mappedMovements.length
+      },
+      data: {
+        medicines: mappedMedicines,
+        bills: mappedBills,
+        categories: mappedCategories,
+        settings: cloudSettings || LocalStore.getSettings(),
+        stockMovements: mappedMovements
+      }
+    });
+  } catch (error: any) {
+    console.error('Restore error:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Cloud restore failed: ${error.message}`
+    });
+  }
 };
